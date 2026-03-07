@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Home, CheckSquare, Activity, Briefcase, CalendarClock, Plus, Check, ChevronLeft, ChevronRight, 
-  Trash2, Edit2, X, User, Settings, Star, Info, LogOut, CreditCard, Download, ListTodo, CheckCircle2,
-  Cloud, CloudOff, RefreshCw
+  Trash2, Edit2, X, User, Settings, Star, Download, ListTodo, CheckCircle2,
+  Cloud, CloudOff, RefreshCw, GripVertical, BellRing, AlertCircle
 } from 'lucide-react';
 
 // --- IMPORTS DO FIREBASE (BANCO DE DADOS DO GOOGLE) ---
@@ -77,8 +77,8 @@ const parseCurrencyToNumber = (formattedValue) => {
   return Number(digits) / 100 || 0;
 };
 
-// --- COMPONENTE COM GESTO DE DESLIZE PREMIUM ---
-const SwipeableItem = ({ onEdit, onDeleteRequest, children, frontClass = "bg-slate-800 border-slate-700", wrapperClass = "mb-3" }) => {
+// --- COMPONENTE COM GESTO DE DESLIZE PREMIUM (MOUSE + TOUCH) ---
+const SwipeableItem = ({ onEdit, onDeleteRequest, children, frontClass = "bg-slate-800 border-slate-700", wrapperClass = "mb-3", isDragDisabled = false }) => {
   const [offset, setOffset] = useState(0);
   const [isSwiping, setIsSwiping] = useState(false);
   const startX = useRef(0);
@@ -86,18 +86,25 @@ const SwipeableItem = ({ onEdit, onDeleteRequest, children, frontClass = "bg-sla
   const isDragging = useRef(false);
   const hasVibrated = useRef({ left: false, right: false });
 
-  const handleTouchStart = (e) => {
-    startX.current = e.touches[0].clientX;
-    startY.current = e.touches[0].clientY;
+  const handleStart = (e) => {
+    if (isDragDisabled) return;
+    const clientX = e.type.includes('mouse') ? e.clientX : e.touches[0].clientX;
+    const clientY = e.type.includes('mouse') ? e.clientY : e.touches[0].clientY;
+    
+    startX.current = clientX;
+    startY.current = clientY;
     isDragging.current = true;
     setIsSwiping(true);
     hasVibrated.current = { left: false, right: false };
   };
 
-  const handleTouchMove = (e) => {
-    if (!isDragging.current) return;
-    const diffX = e.touches[0].clientX - startX.current;
-    const diffY = e.touches[0].clientY - startY.current;
+  const handleMove = (e) => {
+    if (!isDragging.current || isDragDisabled) return;
+    const clientX = e.type.includes('mouse') ? e.clientX : e.touches[0].clientX;
+    const clientY = e.type.includes('mouse') ? e.clientY : e.touches[0].clientY;
+
+    const diffX = clientX - startX.current;
+    const diffY = clientY - startY.current;
 
     if (Math.abs(diffY) > Math.abs(diffX) && Math.abs(diffY) > 10) {
       isDragging.current = false;
@@ -109,7 +116,6 @@ const SwipeableItem = ({ onEdit, onDeleteRequest, children, frontClass = "bg-sla
     if (newOffset > 100) newOffset = 100 + (newOffset - 100) * 0.2;
     if (newOffset < -100) newOffset = -100 + (newOffset + 100) * 0.2;
 
-    // Feedback Tátil Exato ao atingir o limite de deslize
     if (newOffset > 70 && !hasVibrated.current.right) {
       hapticFeedback(30);
       hasVibrated.current.right = true;
@@ -127,7 +133,8 @@ const SwipeableItem = ({ onEdit, onDeleteRequest, children, frontClass = "bg-sla
     setOffset(newOffset);
   };
 
-  const handleTouchEnd = () => {
+  const handleEnd = () => {
+    if (isDragDisabled || !isDragging.current) return;
     isDragging.current = false;
     setIsSwiping(false);
     if (offset > 70) {
@@ -142,7 +149,7 @@ const SwipeableItem = ({ onEdit, onDeleteRequest, children, frontClass = "bg-sla
 
   return (
     <div className={`relative w-full rounded-xl bg-slate-900 overflow-hidden shadow-sm ${wrapperClass}`}>
-      <div className="absolute inset-0 flex justify-between items-center px-4 rounded-xl font-medium text-white">
+      <div className="absolute inset-0 flex justify-between items-center px-4 rounded-xl font-medium text-white pointer-events-none">
         <div className={`flex items-center gap-2 transition-all duration-200 ${offset > 20 ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-4'} text-blue-400`}>
           <Edit2 className="w-5 h-5" /> <span className="text-sm">Editar</span>
         </div>
@@ -151,10 +158,14 @@ const SwipeableItem = ({ onEdit, onDeleteRequest, children, frontClass = "bg-sla
         </div>
       </div>
       <div
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        style={{ transform: `translateX(${offset}px)`, touchAction: 'pan-y' }}
+        onTouchStart={handleStart}
+        onTouchMove={handleMove}
+        onTouchEnd={handleEnd}
+        onMouseDown={handleStart}
+        onMouseMove={handleMove}
+        onMouseUp={handleEnd}
+        onMouseLeave={handleEnd}
+        style={{ transform: `translateX(${offset}px)`, touchAction: isDragDisabled ? 'auto' : 'pan-y' }}
         className={`relative w-full rounded-xl border transition-transform ${!isSwiping ? 'duration-300 ease-out' : 'duration-0'} ${frontClass}`}
       >
         {children}
@@ -183,10 +194,9 @@ export default function App() {
   const dbRef = useRef(null);
   const syncTimeoutRef = useRef(null);
 
-  // CRITICAL FIX: Sanitizar o ID do App para evitar erro de segmentos ímpares no Firestore
   const getAppId = () => {
     const rawId = typeof __app_id !== 'undefined' ? __app_id : 'default-app';
-    return rawId.replace(/\//g, '_'); // Substitui "/" por "_"
+    return rawId.replace(/\//g, '_'); 
   };
 
   useEffect(() => {
@@ -266,9 +276,7 @@ export default function App() {
     setSyncStatus('syncing');
     try {
       const appId = getAppId();
-      // Segue a RULE 1: /artifacts/{appId}/users/{userId}/{collectionName}/{documentId}
       const docPath = doc(dbRef.current, 'artifacts', appId, 'users', user.uid, 'plannerData', 'main');
-      
       const snapshot = await getDoc(docPath);
       
       if (snapshot.exists()) {
@@ -285,7 +293,6 @@ export default function App() {
       }
       setSyncStatus('online');
     } catch (error) {
-      console.error("Erro ao carregar da nuvem:", error);
       setSyncStatus('offline');
     }
   };
@@ -307,7 +314,6 @@ export default function App() {
         
         setSyncStatus('online');
       } catch (error) {
-        console.error("Erro ao salvar na nuvem:", error);
         setSyncStatus('offline');
       }
     };
@@ -319,7 +325,6 @@ export default function App() {
 
     return () => clearTimeout(syncTimeoutRef.current);
   }, [tasks, taskCategories, habitsList, habits, dailyTasks, portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance, firebaseUser]);
-
 
   // --- CONFIGURAÇÃO PWA ---
   useEffect(() => {
@@ -341,41 +346,6 @@ export default function App() {
       }
       tag.content = content;
     });
-
-    const iconUrl = '/icon.png';
-    let appleIconTag = document.querySelector('link[rel="apple-touch-icon"]');
-    if (!appleIconTag) {
-      appleIconTag = document.createElement('link');
-      appleIconTag.rel = 'apple-touch-icon';
-      document.head.appendChild(appleIconTag);
-    }
-    appleIconTag.href = iconUrl;
-
-    let faviconTag = document.querySelector('link[rel="icon"]');
-    if (!faviconTag) {
-      faviconTag = document.createElement('link');
-      faviconTag.rel = 'icon';
-      document.head.appendChild(faviconTag);
-    }
-    faviconTag.href = iconUrl;
-
-    const manifest = {
-      name: "Planner Full",
-      short_name: "Planner Full",
-      display: "standalone",
-      background_color: "#0f172a",
-      theme_color: "#0f172a",
-      icons: [{ src: iconUrl, sizes: "512x512", type: "image/png", purpose: "any maskable" }]
-    };
-    
-    const manifestUrl = `data:application/json;base64,${btoa(JSON.stringify(manifest))}`;
-    let manifestTag = document.querySelector('link[rel="manifest"]');
-    if (!manifestTag) {
-      manifestTag = document.createElement('link');
-      manifestTag.rel = 'manifest';
-      document.head.appendChild(manifestTag);
-    }
-    manifestTag.href = manifestUrl;
   }, []);
 
   // --- LÓGICA DE ALERTAS E DATAS ---
@@ -388,25 +358,78 @@ export default function App() {
     dueDate.setHours(0, 0, 0, 0);
     const diffTime = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
     if (diffTime < 0) return 'overdue';
+    if (diffTime === 0) return 'today';
     if (diffTime <= 7) return 'upcoming';
     return 'normal';
   };
 
-  const dashboardTasks = useMemo(() => {
-    return tasks
-      .filter(task => !task.completed)
-      .map(task => {
-        const dueDate = new Date(task.dueDate + 'T00:00:00');
-        dueDate.setHours(0, 0, 0, 0);
-        const diffDays = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
-        return { ...task, diffDays };
-      })
-      .filter(task => task.diffDays <= 14)
-      .sort((a, b) => a.diffDays - b.diffDays);
+  // ORDENAÇÃO INTELIGENTE (As concluídas descem sempre)
+  const sortedTasksGlobally = useMemo(() => {
+    return [...tasks].sort((a, b) => {
+      if (a.completed !== b.completed) return a.completed ? 1 : -1;
+      if (a.order !== undefined && b.order !== undefined && a.order !== b.order) return a.order - b.order;
+      return new Date(a.dueDate) - new Date(b.dueDate);
+    });
   }, [tasks]);
 
-  const hasUrgentTasks = dashboardTasks.some(t => t.diffDays <= 3);
+  const focusOfDayTasks = sortedTasksGlobally.filter(task => {
+    const status = getTaskStatus(task.dueDate, task.completed);
+    return status === 'overdue' || status === 'today' || (task.completed && (new Date(task.dueDate + 'T00:00:00').getTime() <= today.getTime()));
+  });
 
+  const upcomingTasks = sortedTasksGlobally.filter(task => {
+    const status = getTaskStatus(task.dueDate, task.completed);
+    return status === 'upcoming' || status === 'normal';
+  });
+
+  const hasUrgentTasks = focusOfDayTasks.some(t => !t.completed);
+
+  // --- LÓGICA DO DRAG AND DROP TÁTIL E MOUSE ---
+  const draggingId = useRef(null);
+
+  const handleDragStart = (e, id) => {
+    e.stopPropagation();
+    draggingId.current = id;
+    hapticFeedback(20);
+  };
+
+  const handleDragMove = (e) => {
+    if (!draggingId.current) return;
+    e.preventDefault(); // Evita scroll ao arrastar
+    
+    const clientX = e.type.includes('mouse') ? e.clientX : e.touches[0].clientX;
+    const clientY = e.type.includes('mouse') ? e.clientY : e.touches[0].clientY;
+
+    const targetElement = document.elementFromPoint(clientX, clientY);
+    const dropZone = targetElement?.closest('[data-drag-id]');
+
+    if (dropZone && dropZone.dataset.dragId !== String(draggingId.current)) {
+      const targetId = Number(dropZone.dataset.dragId);
+      
+      setTasks(prev => {
+        const arr = [...prev];
+        const idx1 = arr.findIndex(t => t.id === draggingId.current);
+        const idx2 = arr.findIndex(t => t.id === targetId);
+        
+        if (idx1 >= 0 && idx2 >= 0) {
+          const temp = arr[idx1];
+          arr.splice(idx1, 1);
+          arr.splice(idx2, 0, temp);
+          arr.forEach((t, i) => { t.order = i; });
+        }
+        return arr;
+      });
+      hapticFeedback(15);
+    }
+  };
+
+  const handleDragEnd = (e) => {
+    e.stopPropagation();
+    if (draggingId.current) hapticFeedback(20);
+    draggingId.current = null;
+  };
+
+  // --- CÁLCULOS DO PATRIMÓNIO ---
   const currentPortfolioTotal = portfolioCategories.reduce((acc, cat) => {
     return acc + parseCurrencyToNumber(portfolio[cat.id]);
   }, 0);
@@ -415,7 +438,7 @@ export default function App() {
   const portfolioDifference = currentPortfolioTotal - prevTotalNum;
   const isPortfolioPositive = portfolioDifference >= 0;
 
-  // --- HANDLERS ---
+  // --- HANDLERS COMUNS ---
   const confirmDelete = () => {
     hapticFeedback([50, 100]); 
     if (!deletePrompt) return;
@@ -472,12 +495,13 @@ export default function App() {
   };
 
   const toggleTask = (id) => {
-    hapticFeedback(50);
+    hapticFeedback([50, 30]); // Vibração de Sucesso
     const task = tasks.find(t => t.id === id);
     if (!task) return;
+    
     if (!task.completed && task.recurrence && task.recurrence !== 'none') {
        const nextDate = calculateNextDate(task.dueDate, task.recurrence);
-       const nextTask = { ...task, id: Date.now(), dueDate: nextDate, completed: false };
+       const nextTask = { ...task, id: Date.now(), dueDate: nextDate, completed: false, order: Date.now() };
        const updatedCurrent = { ...task, completed: true, recurrence: 'none' };
        setTasks(prev => prev.map(t => t.id === id ? updatedCurrent : t).concat(nextTask));
     } else {
@@ -492,7 +516,7 @@ export default function App() {
     if (editingTaskId) {
       setTasks(tasks.map(t => t.id === editingTaskId ? { ...t, ...newTask } : t));
     } else {
-      setTasks([...tasks, { ...newTask, id: Date.now(), completed: false }]);
+      setTasks([...tasks, { ...newTask, id: Date.now(), completed: false, order: Date.now() }]);
     }
     setNewTask({ title: '', category: taskCategories[0]?.id || 'meta', dueDate: '', recurrence: 'none' });
     setShowAddTask(false);
@@ -504,7 +528,6 @@ export default function App() {
     setNewTask({ title: task.title, category: task.category, dueDate: task.dueDate, recurrence: task.recurrence || 'none' });
     setEditingTaskId(task.id);
     setShowAddTask(true);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const cancelEditTask = () => {
@@ -604,77 +627,139 @@ export default function App() {
     }
   };
 
+
   // --- ECRÃS DE VISUALIZAÇÃO ---
 
   const renderDashboard = () => (
-    <div className="animate-in fade-in pb-20 relative">
-      <div className="sticky top-[-24px] z-30 pt-6 pb-4 -mx-6 px-6 bg-slate-900/90 backdrop-blur-xl border-b border-slate-800 shadow-[0_15px_30px_-15px_rgba(0,0,0,0.8)]">
-        <header className="mb-4">
-          <h1 className="text-2xl font-bold text-slate-100">Visão Geral</h1>
-          <p className="text-slate-400 text-sm mt-0.5">O seu painel financeiro.</p>
-        </header>
-
-        <div className="bg-slate-800 p-5 rounded-2xl border border-emerald-500/40 shadow-[0_15px_40px_-10px_rgba(16,185,129,0.25)] relative overflow-hidden">
-          <div className="absolute top-0 right-0 -mr-6 -mt-6 w-32 h-32 bg-emerald-500/20 rounded-full blur-2xl pointer-events-none"></div>
-          
-          <div className="relative z-10 flex flex-col justify-center">
-            <p className="text-[11px] font-bold uppercase tracking-wider mb-1.5 text-emerald-400/90 flex items-center gap-1.5">
-              <Briefcase className="w-3.5 h-3.5"/> Total Investido
-            </p>
-            <p className="text-3xl sm:text-4xl font-bold font-mono tracking-tighter break-words text-white drop-shadow-md">
-              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(currentPortfolioTotal)}
-            </p>
-          </div>
+    <div className="animate-in fade-in pb-6 relative space-y-8">
+      {/* 1. VISÃO GERAL */}
+      <div className="bg-slate-800 p-5 rounded-2xl border border-emerald-500/40 shadow-[0_15px_40px_-10px_rgba(16,185,129,0.25)] relative overflow-hidden">
+        <div className="absolute top-0 right-0 -mr-6 -mt-6 w-32 h-32 bg-emerald-500/20 rounded-full blur-2xl pointer-events-none"></div>
+        <div className="relative z-10 flex flex-col justify-center">
+          <p className="text-[11px] font-bold uppercase tracking-wider mb-1.5 text-emerald-400/90 flex items-center gap-1.5">
+            <Briefcase className="w-3.5 h-3.5"/> Total Investido
+          </p>
+          <p className="text-3xl sm:text-4xl font-bold font-mono tracking-tighter break-words text-white drop-shadow-md">
+            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(currentPortfolioTotal)}
+          </p>
         </div>
       </div>
 
-      <div className="mt-8 px-1">
-        <div className="bg-slate-800 p-5 rounded-2xl border border-slate-600 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.5)] relative z-10 transform transition-all hover:-translate-y-1">
-          <h2 className="text-lg font-semibold flex items-center gap-2 text-slate-200 mb-4">
-            <CalendarClock className="w-5 h-5 text-blue-400" /> Próximos 14 dias
-          </h2>
-          {dashboardTasks.length > 0 ? (
-            <ul className="space-y-3">
-              {dashboardTasks.map(task => {
-                let styleClass = '';
-                let labelText = '';
-                if (task.diffDays < 0) {
-                  styleClass = 'border-red-500/30 bg-red-500/10 text-red-400';
-                  labelText = `Atrasado há ${Math.abs(task.diffDays)} dia(s)`;
-                } else if (task.diffDays <= 3) {
-                  styleClass = 'border-yellow-500/30 bg-yellow-500/10 text-yellow-400';
-                  labelText = task.diffDays === 0 ? 'Vence hoje!' : task.diffDays === 1 ? 'Vence amanhã' : `Vence em ${task.diffDays} dias`;
-                } else {
-                  styleClass = 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400';
-                  labelText = `Vence em ${task.diffDays} dias`;
-                }
-                return (
-                  <li key={task.id} className={`flex justify-between items-center p-3 rounded-lg border ${styleClass}`}>
-                    <div className="flex flex-col min-w-0 pr-3">
-                      <span className="font-medium truncate">{task.title}</span>
-                      <span className="text-xs mt-0.5 opacity-80">{labelText}</span>
+      {/* 2. FOCO DO DIA (Drag & Drop compatível com Mouse e Touch) */}
+      <div>
+        <h2 className="text-sm font-bold uppercase tracking-widest text-blue-400 mb-4 px-1 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4" /> Foco do Dia
+        </h2>
+        {focusOfDayTasks.length > 0 ? (
+          <div className="space-y-2">
+            {focusOfDayTasks.map((task) => {
+              const status = getTaskStatus(task.dueDate, task.completed);
+              const isOverdue = status === 'overdue' && !task.completed;
+              const statusColors = isOverdue ? 'border-red-500/50 bg-[#2a1616]' : 'border-slate-700 bg-slate-800';
+
+              return (
+                <div key={task.id} data-drag-id={task.id} className="transition-transform duration-200 ease-in-out">
+                  <SwipeableItem 
+                    onEdit={() => startEditTask(task)}
+                    onDeleteRequest={() => setDeletePrompt({ type: 'task', id: task.id, title: task.title })}
+                    frontClass={`${task.completed ? 'border-slate-800 bg-slate-900 opacity-60' : statusColors} p-4 flex items-center gap-3`}
+                    wrapperClass="mb-0"
+                    isDragDisabled={false}
+                  >
+                    <button 
+                      onClick={() => toggleTask(task.id)}
+                      className={`w-6 h-6 rounded-md border flex items-center justify-center transition-all duration-300 shrink-0 active:scale-75
+                        ${task.completed ? 'bg-blue-600 border-blue-600 shadow-[0_0_10px_rgba(59,130,246,0.5)]' : 'border-slate-500'}`}
+                    >
+                      {task.completed && <Check className="w-4 h-4 text-white" />}
+                    </button>
+                    
+                    <div className="flex-1 min-w-0 pointer-events-none">
+                      <h3 className={`font-bold text-sm truncate transition-colors ${task.completed ? 'line-through text-slate-500' : 'text-slate-100'}`}>
+                        {task.title}
+                      </h3>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className={`text-[10px] uppercase font-bold tracking-wider ${isOverdue ? 'text-red-400' : 'text-slate-500'}`}>
+                          {isOverdue ? 'Atrasada' : 'Hoje'}
+                        </span>
+                        {isOverdue && !task.completed && <BellRing className="w-3 h-3 text-red-400 animate-pulse" />}
+                      </div>
                     </div>
-                    <span className="font-mono text-sm shrink-0">
+
+                    {/* GRIP - Pegador para Drag & Drop MOUSE + TOUCH */}
+                    {!task.completed && (
+                      <div 
+                        className="p-2 -mr-2 cursor-grab active:cursor-grabbing text-slate-500 hover:text-slate-300 transition-colors"
+                        style={{ touchAction: 'none' }}
+                        onTouchStart={(e) => handleDragStart(e, task.id)}
+                        onTouchMove={handleDragMove}
+                        onTouchEnd={handleDragEnd}
+                        onMouseDown={(e) => handleDragStart(e, task.id)}
+                        onMouseMove={handleDragMove}
+                        onMouseUp={handleDragEnd}
+                        onMouseLeave={handleDragEnd}
+                      >
+                        <GripVertical className="w-5 h-5 pointer-events-none" />
+                      </div>
+                    )}
+                  </SwipeableItem>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+           <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl text-center border-dashed">
+             <p className="text-slate-400 font-medium text-sm">O seu foco do dia está limpo! ✨</p>
+           </div>
+        )}
+      </div>
+
+      {/* 3. PRÓXIMOS DIAS (Agenda) */}
+      <div>
+        <h2 className="text-sm font-bold uppercase tracking-widest text-slate-400 mb-4 px-1 flex items-center gap-2">
+          <CalendarClock className="w-4 h-4" /> Próximos Dias
+        </h2>
+        {upcomingTasks.length > 0 ? (
+          <div className="space-y-2 opacity-90">
+            {upcomingTasks.map(task => {
+              return (
+                <SwipeableItem 
+                  key={task.id}
+                  onEdit={() => startEditTask(task)}
+                  onDeleteRequest={() => setDeletePrompt({ type: 'task', id: task.id, title: task.title })}
+                  frontClass={`${task.completed ? 'border-slate-800 bg-slate-900 opacity-60' : 'border-slate-700 bg-slate-800'} p-4 flex items-center gap-3`}
+                  wrapperClass="mb-0"
+                >
+                  <button 
+                    onClick={() => toggleTask(task.id)}
+                    className={`w-6 h-6 rounded-md border flex items-center justify-center transition-all duration-300 shrink-0 active:scale-75
+                      ${task.completed ? 'bg-blue-600 border-blue-600' : 'border-slate-500'}`}
+                  >
+                    {task.completed && <Check className="w-4 h-4 text-white" />}
+                  </button>
+                  <div className="flex-1 min-w-0 pointer-events-none">
+                    <h3 className={`font-medium text-sm truncate transition-colors ${task.completed ? 'line-through text-slate-500' : 'text-slate-200'}`}>
+                      {task.title}
+                    </h3>
+                    <p className="text-[11px] text-slate-400 font-mono mt-0.5">
                       {new Date(task.dueDate).toLocaleDateString('pt-BR')}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl text-center">
-              <p className="text-slate-400 font-medium">Nenhuma tarefa para os próximos 14 dias. Tudo limpo! ✨</p>
-            </div>
-          )}
-        </div>
+                    </p>
+                  </div>
+                </SwipeableItem>
+              );
+            })}
+          </div>
+        ) : (
+           <p className="text-sm text-slate-500 italic px-2">Sem tarefas para os próximos dias.</p>
+        )}
       </div>
     </div>
   );
 
   const renderTasks = () => (
-    <div className="space-y-6 animate-in fade-in pb-20">
+    <div className="space-y-6 animate-in fade-in pb-6">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-slate-100">Agenda & Metas</h1>
+        <h1 className="text-2xl font-bold text-slate-100">Agenda Completa</h1>
         <button 
           onClick={() => {
             hapticFeedback(30);
@@ -805,13 +890,15 @@ export default function App() {
       {!showAddTask && tasks.length > 0 && <SwipeHint />}
 
       <div className="space-y-1">
-        {tasks.sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate)).map(task => {
+        {sortedTasksGlobally.map(task => {
           const status = getTaskStatus(task.dueDate, task.completed);
+          const isOverdue = status === 'overdue' && !task.completed;
           const statusColors = {
             overdue: 'border-red-500/50 bg-[#2a1616]', 
-            upcoming: 'border-yellow-500/50 bg-[#2a2411]',
+            today: 'border-blue-500/40 bg-blue-500/10',
+            upcoming: 'border-yellow-500/30 bg-[#2a2411]',
             normal: 'border-slate-700 bg-slate-800',
-            completed: 'border-slate-800 bg-slate-900 opacity-70'
+            completed: 'border-slate-800 bg-slate-900 opacity-60'
           };
           const recurrenceLabels = { daily: 'Diária', weekly: 'Semanal', monthly: 'Mensal', yearly: 'Anual' };
 
@@ -831,13 +918,19 @@ export default function App() {
               </button>
               
               <div className="flex-1 min-w-0 pointer-events-none">
-                <h3 className={`font-medium truncate transition-colors ${task.completed ? 'line-through text-slate-400' : 'text-slate-100'}`}>
-                  {task.title}
-                </h3>
+                <div className="flex justify-between items-center">
+                   <h3 className={`font-bold truncate transition-colors ${task.completed ? 'line-through text-slate-500' : 'text-slate-100'}`}>
+                     {task.title}
+                   </h3>
+                   {!task.completed && (status === 'overdue' || status === 'today') && (
+                     <BellRing className={`w-4 h-4 shrink-0 ${isOverdue ? 'text-red-400 animate-pulse' : 'text-blue-400'}`} />
+                   )}
+                </div>
                 <p className="text-xs text-slate-400 flex items-center gap-2 mt-1">
                   <span className="capitalize">{taskCategories.find(c => c.id === task.category)?.label || task.category}</span>
                   <span>•</span>
-                  <span className={`${status === 'overdue' && !task.completed ? 'text-red-400 font-medium' : ''} 
+                  <span className={`${isOverdue ? 'text-red-400 font-bold' : ''} 
+                                  ${status === 'today' && !task.completed ? 'text-blue-400 font-bold' : ''}
                                   ${status === 'upcoming' && !task.completed ? 'text-yellow-400 font-medium' : ''}`}>
                     {new Date(task.dueDate).toLocaleDateString('pt-BR')}
                   </span>
@@ -885,10 +978,10 @@ export default function App() {
     const isAllDone = totalItems > 0 && completedItems === totalItems;
 
     return (
-      <div className="space-y-6 animate-in fade-in pb-20">
+      <div className="space-y-6 animate-in fade-in pb-6">
         <header className="mb-6 flex justify-between items-start">
           <div>
-            <h1 className="text-2xl font-bold text-slate-100">Meu Dia</h1>
+            <h1 className="text-2xl font-bold text-slate-100">O Meu Dia</h1>
             <p className="text-slate-400">A sua rotina fina e pequenos compromissos.</p>
           </div>
         </header>
@@ -1020,11 +1113,11 @@ export default function App() {
   };
 
   const renderPortfolio = () => (
-    <div className="space-y-6 animate-in fade-in pb-20">
+    <div className="space-y-6 animate-in fade-in pb-6">
       <header className="flex justify-between items-start mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-slate-100">Seus Investimentos</h1>
-          <p className="text-slate-400">Acompanhe a evolução do seu patrimônio.</p>
+          <h1 className="text-2xl font-bold text-slate-100">Os Seus Investimentos</h1>
+          <p className="text-slate-400">Acompanhe a evolução e distribuição.</p>
         </div>
         <button onClick={() => { hapticFeedback(30); setIsEditingPortfolioCats(!isEditingPortfolioCats); }} className={`p-2 rounded-full transition-colors active:scale-95 ${isEditingPortfolioCats ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'bg-slate-800 text-slate-400 hover:text-slate-200'}`}>
           <Edit2 className="w-5 h-5" />
@@ -1058,16 +1151,37 @@ export default function App() {
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-4">
-          {portfolioCategories.map(cat => (
-            <div key={cat.id} className="bg-slate-800 p-3 sm:p-4 rounded-xl border border-slate-700 flex flex-col justify-between shadow-sm focus-within:border-blue-500/50 focus-within:ring-1 focus-within:ring-blue-500/50 transition-all">
-              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 line-clamp-2 h-8">{cat.label}</label>
-              <div className="relative">
-                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-medium text-[13px]">R$</span>
-                <input type="text" inputMode="numeric" placeholder="0,00" value={portfolio[cat.id] || ''} onChange={e => handlePortfolioChange(cat.id, e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg py-2.5 pl-8 pr-2 text-white font-mono focus:outline-none transition-colors text-[14px] sm:text-sm tracking-tighter" />
+        <div className="space-y-4">
+          {portfolioCategories.map(cat => {
+            const catValueNum = parseCurrencyToNumber(portfolio[cat.id]);
+            const percent = currentPortfolioTotal > 0 ? ((catValueNum / currentPortfolioTotal) * 100).toFixed(1) : 0;
+            
+            return (
+              <div key={cat.id} className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm focus-within:border-blue-500/50 transition-all flex flex-col gap-3">
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">{cat.label}</label>
+                  <span className="text-[10px] font-bold px-2 py-1 bg-slate-900 text-blue-400 rounded-md border border-slate-700">
+                    {percent}% da carteira
+                  </span>
+                </div>
+                
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-medium text-sm">R$</span>
+                  <input 
+                    type="text" inputMode="numeric" placeholder="0,00" 
+                    value={portfolio[cat.id] || ''} 
+                    onChange={e => handlePortfolioChange(cat.id, e.target.value)} 
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg py-3 pl-9 pr-3 text-white font-mono focus:outline-none transition-colors text-base tracking-tighter shadow-inner" 
+                  />
+                </div>
+                
+                {/* Mini barra de progresso visual */}
+                <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
+                  <div className="bg-blue-500 h-1.5 rounded-full" style={{ width: `${percent}%` }}></div>
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
@@ -1096,10 +1210,11 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-900 font-sans text-slate-200 selection:bg-blue-500/30 flex justify-center">
-      <div className="w-full max-w-md bg-slate-900 relative flex flex-col h-screen overflow-hidden shadow-2xl shadow-black/50 border-x border-slate-800">
+    <div className="flex justify-center bg-slate-900 font-sans text-slate-200 selection:bg-blue-500/30 h-[100dvh] w-full overflow-hidden">
+      <div className="w-full max-w-md bg-slate-900 relative flex flex-col h-full shadow-2xl shadow-black/50 border-x border-slate-800">
         
-        <div className="pt-6 pb-2 px-6 flex justify-between items-center bg-slate-900/90 backdrop-blur-md z-10 sticky top-0 border-b border-slate-800">
+        {/* TOPBAR (Fixada) */}
+        <div className="shrink-0 pt-6 pb-2 px-6 flex justify-between items-center bg-slate-900/90 backdrop-blur-md z-10 border-b border-slate-800">
           <div className="font-black text-xl tracking-tight text-white flex items-center gap-2">
             <div className="w-7 h-7 bg-gradient-to-br from-blue-500 to-blue-700 rounded-md flex items-center justify-center shadow-lg shadow-blue-500/30">
               <span className="text-white text-sm">P</span>
@@ -1113,14 +1228,16 @@ export default function App() {
           </button>
         </div>
 
-        <main className="flex-1 overflow-y-auto p-6 scroll-smooth relative">
+        {/* ÁREA CENTRAL ROLÁVEL */}
+        <main className="flex-1 overflow-y-auto p-6 scroll-smooth">
           {activeTab === 'dashboard' && renderDashboard()}
           {activeTab === 'tasks' && renderTasks()}
           {activeTab === 'routine' && renderRoutine()}
           {activeTab === 'portfolio' && renderPortfolio()}
         </main>
 
-        <nav className="bg-slate-900 border-t border-slate-800 pb-safe pt-2 px-6 flex justify-between items-center absolute bottom-0 w-full shadow-[0_-10px_40px_rgba(0,0,0,0.5)] z-20">
+        {/* BOTTOM NAV (Fixada na base do ecrã) */}
+        <nav className="shrink-0 bg-slate-900 border-t border-slate-800 pb-safe pt-2 px-6 flex justify-between items-center w-full shadow-[0_-10px_40px_rgba(0,0,0,0.5)] z-20">
           {[
             { id: 'dashboard', icon: Home, label: 'Início' },
             { id: 'tasks', icon: CheckSquare, label: 'Agenda' },
@@ -1141,6 +1258,7 @@ export default function App() {
           })}
         </nav>
 
+        {/* MENUS E MODAIS A SEGUIR... */}
         {isSidebarOpen && (
           <div className="absolute inset-0 z-[100] flex justify-end overflow-hidden">
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setIsSidebarOpen(false)}></div>
@@ -1177,7 +1295,7 @@ export default function App() {
               </div>
 
               <div className="p-4 border-t border-slate-800">
-                <p className="text-center text-[10px] text-slate-500 mt-4 uppercase tracking-widest">Planner Full v2.0 Premium</p>
+                <p className="text-center text-[10px] text-slate-500 mt-4 uppercase tracking-widest">Planner Full v2.1 Premium</p>
               </div>
             </div>
           </div>
@@ -1216,7 +1334,7 @@ export default function App() {
       </div>
 
       <style dangerouslySetInnerHTML={{__html: `
-        .pb-safe { padding-bottom: env(safe-area-inset-bottom, 20px); } 
+        .pb-safe { padding-bottom: max(env(safe-area-inset-bottom, 20px), 16px); } 
         input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: 0.5; cursor: pointer; } 
         ::-webkit-scrollbar { width: 0px; background: transparent; } 
         .hide-scrollbar::-webkit-scrollbar { display: none; } 
