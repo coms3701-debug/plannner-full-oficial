@@ -53,16 +53,12 @@ const sendNativeNotification = (title, body) => {
   } catch (e) {}
 };
 
-// FORMATAÇÃO SEGURA DE DATAS (ANTI-CRASH ABSOLUTO)
 const parseLocalDate = (dateStr) => {
   try {
     if (!dateStr || typeof dateStr !== 'string') return new Date(0);
-    // Tenta corrigir datas antigas no formato DD/MM/AAAA para AAAA-MM-DD
     if (dateStr.includes('/')) {
        const parts = dateStr.split('/');
-       if (parts.length === 3) {
-          return new Date(parts[2], parts[1] - 1, parts[0]);
-       }
+       if (parts.length === 3) return new Date(parts[2], parts[1] - 1, parts[0]);
     }
     const [y, m, d] = dateStr.split('-');
     if (!y || !m || !d) return new Date(0);
@@ -73,14 +69,13 @@ const parseLocalDate = (dateStr) => {
 const formatDateLocal = (dateStr) => {
   try {
     if (!dateStr || typeof dateStr !== 'string') return '';
-    if (dateStr.includes('/')) return dateStr; // Já está formatada
+    if (dateStr.includes('/')) return dateStr; 
     const [y, m, d] = dateStr.split('-');
     if (!y || !m || !d) return dateStr;
     return `${d}/${m}/${y}`;
   } catch (e) { return ''; }
 };
 
-// --- HOOKS CUSTOMIZADOS ---
 function useLocalStorage(key, initialValue) {
   const [storedValue, setStoredValue] = useState(() => {
     try {
@@ -102,7 +97,6 @@ function useLocalStorage(key, initialValue) {
   return [storedValue, setValue];
 }
 
-// --- CONSTANTES ---
 const INITIAL_HABITS_LIST = [
   { id: 'estudo', label: 'Estudo/conhecimento' },
   { id: 'reserva', label: 'Reserva de emergência' },
@@ -136,7 +130,6 @@ const parseCurrencyToNumber = (formattedValue) => {
   return Number(digits) / 100 || 0;
 };
 
-// --- COMPONENTE DESLIZE SEGURO ---
 const SwipeableItem = ({ onEdit, onDeleteRequest, children, frontClass = "bg-slate-800 border-slate-700", wrapperClass = "mb-3", isDragDisabled = false }) => {
   const [offset, setOffset] = useState(0);
   const [isSwiping, setIsSwiping] = useState(false);
@@ -203,40 +196,10 @@ const SwipeableItem = ({ onEdit, onDeleteRequest, children, frontClass = "bg-sla
   );
 };
 
-// ESCUDO ANTI-CRASH
-class TabErrorBoundary extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false, errorMsg: '' };
-  }
-  static getDerivedStateFromError(error) {
-    return { hasError: true, errorMsg: error.toString() };
-  }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="p-6 bg-red-900/20 border border-red-500/50 rounded-2xl text-center mt-10 animate-in fade-in">
-          <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-          <h2 className="text-red-400 font-black text-xl mb-2">Ops! Erro na Aba</h2>
-          <p className="text-sm text-slate-300 mb-4">Ocorreu um erro interno de renderização.</p>
-          <button 
-            onClick={() => window.location.reload()}
-            className="w-full bg-red-600 hover:bg-red-500 text-white py-3 rounded-xl font-bold shadow-lg shadow-red-600/30"
-          >
-            Recarregar Página
-          </button>
-        </div>
-      );
-    }
-    return this.props.children; 
-  }
-}
-
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  // --- FIREBASE ---
   const [firebaseUser, setFirebaseUser] = useState(null);
   const [syncStatus, setSyncStatus] = useState('offline');
   const dbRef = useRef(null);
@@ -271,9 +234,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // =======================================================================
-  // CLEAN START: NOVAS "GAVETAS" (v3) PARA LIMPAR QUALQUER CORRUPÇÃO ANTIGA
-  // =======================================================================
+  // ESTADOS V3 
   const [tasksRaw, setTasks] = useLocalStorage('planner_v3_tasks', []);
   const [taskCategoriesRaw, setTaskCategories] = useLocalStorage('planner_v3_categories', INITIAL_CATEGORIES);
   const [habitsListRaw, setHabitsList] = useLocalStorage('planner_v3_habitsList', INITIAL_HABITS_LIST);
@@ -284,13 +245,11 @@ export default function App() {
   const [prevPortfolioBalance, setPrevPortfolioBalance] = useLocalStorage('planner_v3_prevBalance', '');
   const [portfolio, setPortfolio] = useLocalStorage('planner_v3_portfolio', {});
 
-  // Garantia Absoluta que os Arrays só contêm Objetos Válidos com IDs
   const tasks = (Array.isArray(tasksRaw) ? tasksRaw : []).filter(t => t && typeof t === 'object' && t.id);
   const taskCategories = (Array.isArray(taskCategoriesRaw) ? taskCategoriesRaw : INITIAL_CATEGORIES).filter(c => c && typeof c === 'object' && c.id);
   const habitsList = (Array.isArray(habitsListRaw) ? habitsListRaw : INITIAL_HABITS_LIST).filter(h => h && typeof h === 'object' && h.id);
   const portfolioCategories = (Array.isArray(portfolioCategoriesRaw) ? portfolioCategoriesRaw : INITIAL_PORTFOLIO_CATEGORIES).filter(c => c && typeof c === 'object' && c.id);
   
-  // Garantia Absoluta de Objetos
   const safeHabits = typeof habits === 'object' && habits !== null && !Array.isArray(habits) ? habits : {};
   const safeDailyTasks = typeof dailyTasks === 'object' && dailyTasks !== null && !Array.isArray(dailyTasks) ? dailyTasks : {};
   const safePortfolio = typeof portfolio === 'object' && portfolio !== null && !Array.isArray(portfolio) ? portfolio : {};
@@ -310,12 +269,10 @@ export default function App() {
   const [deletePrompt, setDeletePrompt] = useState(null); 
   const [editPrompt, setEditPrompt] = useState(null); 
 
-  // --- SINCRONIZAÇÃO NUVEM COM NOVO DOCUMENTO (v3_main) ---
   const loadDataFromCloud = async (user) => {
     if (!dbRef.current || !user) return;
     setSyncStatus('syncing');
     try {
-      // Documento novo na nuvem para não cruzar com os dados antigos
       const docPath = doc(dbRef.current, 'artifacts', getAppId(), 'users', user.uid, 'plannerData', 'v3_main');
       const snapshot = await getDoc(docPath);
       if (snapshot.exists()) {
@@ -349,7 +306,6 @@ export default function App() {
     }, 2000);
   }, [tasks, taskCategories, habitsList, habits, dailyTasks, portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance, firebaseUser]);
 
-  // --- CONFIGURAÇÃO PWA NATIVA ---
   useEffect(() => {
     document.title = "Planner Full";
     const metaTags = [
@@ -359,7 +315,6 @@ export default function App() {
       { name: "theme-color", content: "#0f172a" },
       { name: "mobile-web-app-capable", content: "yes" }
     ];
-
     metaTags.forEach(({ name, content }) => {
       let tag = document.querySelector(`meta[name="${name}"]`);
       if (!tag) {
@@ -371,14 +326,12 @@ export default function App() {
     });
   }, []);
 
-  // --- MOTOR DE LEMBRETES (NOTIFICAÇÕES 1H e 1D antes) ---
   useEffect(() => {
     const interval = setInterval(() => {
       const now = new Date();
       let updatedTasks = false;
       const newTasks = tasks.map(task => {
         if (!task || task.completed || !task.hasReminder || !task.dueDate || !task.dueTime) return task;
-        
         try {
           const [y, m, d] = task.dueDate.split('-');
           const [h, min] = task.dueTime.split(':');
@@ -400,14 +353,11 @@ export default function App() {
           return t;
         } catch(e) { return task; }
       });
-
       if (updatedTasks) setTasks(newTasks);
     }, 60000); 
-
     return () => clearInterval(interval);
   }, [tasks]);
 
-  // --- DATAS E ORDENAÇÃO SEGURAS ---
   const todayObj = new Date(); 
   todayObj.setHours(0, 0, 0, 0);
   const todayStr = new Date(todayObj.getTime() - (todayObj.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
@@ -424,7 +374,7 @@ export default function App() {
     return 'normal';
   };
 
-  const getStatusColors = (status, isOverdue) => {
+  const getStatusColors = (status) => {
     const dict = {
       'overdue': 'border-red-500/50 bg-[#2a1616] text-red-400',
       'today': 'border-blue-500/40 bg-blue-500/10 text-blue-400',
@@ -438,16 +388,13 @@ export default function App() {
 
   const sortedTasksGlobally = useMemo(() => {
     return [...tasks].sort((a, b) => {
-      // Impede NaN na ordenação (Safari odeia NaN)
       if (a?.completed !== b?.completed) return a?.completed ? 1 : -1;
       if (a?.order !== undefined && b?.order !== undefined && a?.order !== b?.order) return a.order - b.order;
-      
       const dateA = parseLocalDate(a?.dueDate).getTime();
       const dateB = parseLocalDate(b?.dueDate).getTime();
       if (isNaN(dateA) && isNaN(dateB)) return 0;
       if (isNaN(dateA)) return 1;
       if (isNaN(dateB)) return -1;
-      
       return dateA - dateB;
     });
   }, [tasks]);
@@ -467,32 +414,21 @@ export default function App() {
   const dayTasksForDashboard = Array.isArray(safeDailyTasks[todayStr]) ? safeDailyTasks[todayStr] : [];
   const hasUrgentTasks = focusOfDayTasks.some(t => t && !t.completed) || dayTasksForDashboard.some(t => t && !t.completed);
 
-  // --- DRAG AND DROP ---
   const draggingId = useRef(null);
-
-  const handleDragStart = (e, id) => {
-    e.stopPropagation();
-    draggingId.current = id;
-    hapticFeedback(20);
-  };
-
+  const handleDragStart = (e, id) => { e.stopPropagation(); draggingId.current = id; hapticFeedback(20); };
   const handleDragMove = (e) => {
     if (!draggingId.current) return;
     e.preventDefault(); 
     const clientX = e?.type?.includes('mouse') ? e.clientX : (e?.touches?.[0]?.clientX || 0);
     const clientY = e?.type?.includes('mouse') ? e.clientY : (e?.touches?.[0]?.clientY || 0);
-
     const targetElement = document.elementFromPoint(clientX, clientY);
     const dropZone = targetElement?.closest('[data-drag-id]');
-
     if (dropZone && dropZone.dataset.dragId !== String(draggingId.current)) {
       const targetId = Number(dropZone.dataset.dragId);
-      
       setTasks(prev => {
         const arr = [...prev];
         const idx1 = arr.findIndex(t => t && t.id === draggingId.current);
         const idx2 = arr.findIndex(t => t && t.id === targetId);
-        
         if (idx1 >= 0 && idx2 >= 0) {
           const temp = arr[idx1];
           arr.splice(idx1, 1);
@@ -504,19 +440,12 @@ export default function App() {
       hapticFeedback(15);
     }
   };
+  const handleDragEnd = (e) => { e.stopPropagation(); if (draggingId.current) hapticFeedback(20); draggingId.current = null; };
 
-  const handleDragEnd = (e) => {
-    e.stopPropagation();
-    if (draggingId.current) hapticFeedback(20);
-    draggingId.current = null;
-  };
-
-  // --- CÁLCULOS PATRIMÓNIO ---
   const currentPortfolioTotal = portfolioCategories.reduce((acc, cat) => acc + parseCurrencyToNumber(safePortfolio[cat?.id]), 0);
   const portfolioDifference = currentPortfolioTotal - parseCurrencyToNumber(prevPortfolioBalance);
   const isPortfolioPositive = portfolioDifference >= 0;
 
-  // --- HANDLERS ---
   const confirmDelete = () => {
     hapticFeedback([50, 100]); 
     if (!deletePrompt) return;
@@ -542,12 +471,8 @@ export default function App() {
   };
 
   const getDeleteTypeLabel = (type) => {
-    if (type === 'task') return 'a tarefa';
-    if (type === 'habit') return 'o hábito';
-    if (type === 'category') return 'a categoria';
-    if (type === 'portfolioCat') return 'o investimento';
-    if (type === 'dailyTask') return 'o compromisso rápido';
-    return 'o item';
+    const dict = { 'task': 'a tarefa', 'habit': 'o hábito', 'category': 'a categoria', 'portfolioCat': 'o investimento', 'dailyTask': 'o compromisso' };
+    return dict[type] || 'o item';
   };
 
   const calculateNextDate = (dateStr, recurrence) => {
@@ -563,7 +488,6 @@ export default function App() {
     hapticFeedback([50, 30]); 
     const task = tasks.find(t => t?.id === id);
     if (!task) return;
-    
     if (!task.completed && task.recurrence && task.recurrence !== 'none') {
        const nextDate = calculateNextDate(task.dueDate, task.recurrence);
        const nextTask = { ...task, id: Date.now(), dueDate: nextDate, completed: false, order: Date.now(), notif1d: false, notif1h: false };
@@ -613,10 +537,10 @@ export default function App() {
 
   const handleAddCategory = () => {
     hapticFeedback(30);
-    if (!newCategoryLabel.trim()) return;
-    const newId = newCategoryLabel.trim().toLowerCase().replace(/\s+/g, '_');
+    if (!newCategoryLabel || typeof newCategoryLabel !== 'string' || !newCategoryLabel.trim()) return;
+    const newId = newCategoryLabel.trim().toLowerCase().replace(/[^a-z0-9]/g, '_'); // Correção Segura de ID
     if (!taskCategories.some(c => c?.id === newId)) {
-      setTaskCategories([...taskCategories, { id: newId, label: newCategoryLabel.trim() }]);
+      setTaskCategories([...taskCategories, { id: newId || `cat_${Date.now()}`, label: newCategoryLabel.trim() }]);
     }
     setNewCategoryLabel('');
   };
@@ -659,9 +583,9 @@ export default function App() {
   const handleAddPortfolioCategory = () => {
     hapticFeedback(30);
     if (!newPortfolioCatLabel.trim()) return;
-    const newId = newPortfolioCatLabel.trim().toLowerCase().replace(/\s+/g, '_');
+    const newId = newPortfolioCatLabel.trim().toLowerCase().replace(/[^a-z0-9]/g, '_');
     if (!portfolioCategories.some(c => c?.id === newId)) {
-      setPortfolioCategories([...portfolioCategories, { id: newId, label: newPortfolioCatLabel.trim() }]);
+      setPortfolioCategories([...portfolioCategories, { id: newId || `port_${Date.now()}`, label: newPortfolioCatLabel.trim() }]);
     }
     setNewPortfolioCatLabel('');
   };
@@ -683,487 +607,465 @@ export default function App() {
     }
   };
 
-  // --- ECRÃS DE VISUALIZAÇÃO ---
-
-  const renderDashboard = () => (
-    <div className="animate-in fade-in pb-6 relative space-y-8">
-      {/* VISÃO GERAL */}
-      <div className="bg-slate-800 p-5 rounded-2xl border border-emerald-500/40 shadow-[0_15px_40px_-10px_rgba(16,185,129,0.25)] relative overflow-hidden">
-        <div className="absolute top-0 right-0 -mr-6 -mt-6 w-32 h-32 bg-emerald-500/20 rounded-full blur-2xl pointer-events-none"></div>
-        <div className="relative z-10 flex flex-col justify-center">
-          <p className="text-[11px] font-bold uppercase tracking-wider mb-1.5 text-emerald-400/90 flex items-center gap-1.5">
-            <Briefcase className="w-3.5 h-3.5"/> Total Investido
-          </p>
-          <p className="text-3xl sm:text-4xl font-bold font-mono tracking-tighter break-words text-white drop-shadow-md">
-            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(currentPortfolioTotal)}
-          </p>
-        </div>
-      </div>
-
-      {/* FOCO DO DIA (Sincronizado) */}
-      <div>
-        <h2 className="text-sm font-bold uppercase tracking-widest text-blue-400 mb-4 px-1 flex items-center gap-2">
-          <AlertCircle className="w-4 h-4" /> Foco do Dia
-        </h2>
-        
-        {focusOfDayTasks.length === 0 && dayTasksForDashboard.length === 0 ? (
-           <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl text-center border-dashed">
-             <p className="text-slate-400 font-medium text-sm">O seu foco do dia está limpo! ✨</p>
-           </div>
-        ) : (
-          <div className="space-y-2">
-            {focusOfDayTasks.map((task) => {
-              try {
-                if(!task || typeof task !== 'object') return null;
-                const status = getTaskStatus(task.dueDate, task.completed);
-                const classStr = getStatusColors(status, status==='overdue');
-                const safeTitle = typeof task.title === 'string' ? task.title : 'Sem Título';
-
-                return (
-                  <div key={task.id || Math.random()} data-drag-id={task.id} className="transition-transform duration-200 ease-in-out">
-                    <SwipeableItem onEdit={() => startEditTask(task)} onDeleteRequest={() => setDeletePrompt({ type: 'task', id: task.id, title: safeTitle })} frontClass={`${classStr} p-4 flex items-center gap-3`} wrapperClass="mb-0">
-                      <button onClick={() => toggleTask(task.id)} className={`w-6 h-6 rounded-md border flex items-center justify-center transition-all duration-300 shrink-0 active:scale-75 ${task.completed ? 'bg-blue-600 border-blue-600 shadow-[0_0_10px_rgba(59,130,246,0.5)]' : 'border-slate-500'}`}>
-                        {task.completed && <Check className="w-4 h-4 text-white" />}
-                      </button>
-                      
-                      <div className="flex-1 min-w-0 pointer-events-none">
-                        <h3 className={`font-bold text-sm truncate transition-colors ${task.completed ? 'line-through text-slate-500' : 'text-slate-100'}`}>
-                          {safeTitle}
-                        </h3>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className={`text-[10px] uppercase font-bold tracking-wider opacity-80`}>
-                            {status === 'overdue' ? 'Atrasada' : 'Hoje'} {typeof task.dueTime === 'string' && task.dueTime ? `• ${task.dueTime}` : ''}
-                          </span>
-                          {task.hasReminder && !task.completed && <BellRing className={`w-3 h-3 ${status==='overdue' ? 'animate-pulse' : ''}`} />}
-                        </div>
-                      </div>
-
-                      {!task.completed && (
-                        <div className="p-2 -mr-2 cursor-grab active:cursor-grabbing opacity-50 hover:opacity-100" style={{ touchAction: 'none' }} onTouchStart={(e) => handleDragStart(e, task.id)} onTouchMove={handleDragMove} onTouchEnd={handleDragEnd} onMouseDown={(e) => handleDragStart(e, task.id)} onMouseMove={handleDragMove} onMouseUp={handleDragEnd} onMouseLeave={handleDragEnd}>
-                          <GripVertical className="w-5 h-5 pointer-events-none" />
-                        </div>
-                      )}
-                    </SwipeableItem>
-                  </div>
-                );
-              } catch(e) { return null; }
-            })}
-
-            {dayTasksForDashboard.map(task => {
-              try {
-                if(!task || typeof task !== 'object') return null;
-                const safeText = typeof task.text === 'string' ? task.text : 'Compromisso';
-                return (
-                <SwipeableItem key={`rt_${task.id || Math.random()}`} onEdit={()=>{}} onDeleteRequest={() => setDeletePrompt({ type: 'dailyTask', id: task.id, title: safeText, dateStr: todayStr })} frontClass="bg-slate-800/80 border-slate-700/80 p-3.5 flex items-center justify-between" wrapperClass="mb-0" isDragDisabled>
-                  <label className="flex items-center gap-3 cursor-pointer flex-1 w-full">
-                    <div className="relative flex items-center justify-center w-6 h-6 shrink-0">
-                      <input type="checkbox" checked={!!task.completed} onChange={() => toggleDailyTask(todayStr, task.id)} className="peer sr-only"/>
-                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all duration-200 active:scale-75 ${task.completed ? 'bg-blue-500 border-blue-500' : 'border-slate-500'}`}>
-                        {task.completed && <Check className="w-3.5 h-3.5 text-white" />}
-                      </div>
-                    </div>
-                    <span className={`text-sm font-medium transition-colors ${task.completed ? 'text-slate-500 line-through' : 'text-slate-200'}`}>
-                      {safeText}
-                    </span>
-                  </label>
-                </SwipeableItem>
-              )} catch(e) { return null; }
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* PRÓXIMOS DIAS */}
-      <div>
-        <h2 className="text-sm font-bold uppercase tracking-widest text-slate-400 mb-4 px-1 flex items-center gap-2">
-          <CalendarClock className="w-4 h-4" /> Próximos Dias
-        </h2>
-        {upcomingTasks.length > 0 ? (
-          <div className="space-y-2 opacity-95">
-            {upcomingTasks.map(task => {
-              try {
-                if(!task || typeof task !== 'object') return null;
-                const status = getTaskStatus(task.dueDate, task.completed);
-                const classStr = getStatusColors(status, false);
-                const safeTitle = typeof task.title === 'string' ? task.title : 'Sem Título';
-
-                return (
-                  <SwipeableItem key={task.id || Math.random()} onEdit={() => startEditTask(task)} onDeleteRequest={() => setDeletePrompt({ type: 'task', id: task.id, title: safeTitle })} frontClass={`${classStr} p-4 flex items-center gap-3`} wrapperClass="mb-0">
-                    <button onClick={() => toggleTask(task.id)} className={`w-6 h-6 rounded-md border flex items-center justify-center transition-all duration-300 shrink-0 active:scale-75 ${task.completed ? 'bg-blue-600 border-blue-600' : 'border-slate-500'}`}>
-                      {task.completed && <Check className="w-4 h-4 text-white" />}
-                    </button>
-                    <div className="flex-1 min-w-0 pointer-events-none">
-                      <h3 className={`font-medium text-sm truncate transition-colors`}>{safeTitle}</h3>
-                      <p className="text-[11px] opacity-70 font-mono mt-0.5">
-                        {formatDateLocal(task.dueDate)} {typeof task.dueTime === 'string' && task.dueTime ? `• ${task.dueTime}` : ''}
-                      </p>
-                    </div>
-                  </SwipeableItem>
-                );
-              } catch(e) { return null; }
-            })}
-          </div>
-        ) : (
-           <p className="text-sm text-slate-500 italic px-2">Sem tarefas para os próximos dias.</p>
-        )}
-      </div>
-    </div>
-  );
-
-  const renderTasks = () => (
-    <div className="space-y-6 animate-in fade-in pb-6">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-slate-100">Agenda Completa</h1>
-        <button onClick={() => { cancelEditTask(); setNewTask(prev => ({ ...prev, category: taskCategories[0]?.id || 'meta' })); setShowAddTask(true); hapticFeedback(30); }} className="bg-blue-600 hover:bg-blue-500 text-white p-2 rounded-full transition-colors shadow-lg shadow-blue-500/30 active:scale-95">
-          <Plus className="w-5 h-5" />
-        </button>
-      </div>
-
-      {showAddTask && (
-        <form onSubmit={handleSaveTask} className="bg-slate-800 p-5 rounded-2xl border border-slate-700 mb-6 space-y-5 shadow-lg">
-          <div>
-            <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Título da Tarefa</label>
-            <input type="text" required className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:border-blue-500 focus:ring-1 outline-none transition-all" value={newTask.title} onChange={e => setNewTask({...newTask, title: e.target.value})} placeholder="Ex: Reunião de Equipa"/>
-          </div>
-          <div className="flex gap-4">
-            <div className="flex-1 min-w-0">
-              <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Data</label>
-              <input type="date" required className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:border-blue-500 outline-none color-scheme-dark transition-all" value={newTask.dueDate} onChange={e => setNewTask({...newTask, dueDate: e.target.value})}/>
+  // ==========================================
+  // RENDERIZAÇÃO BLINDADA COM TRY/CATCH INTERNO
+  // ==========================================
+  
+  const renderDashboard = () => {
+    try {
+      return (
+        <div className="animate-in fade-in pb-6 relative space-y-8">
+          <div className="bg-slate-800 p-5 rounded-2xl border border-emerald-500/40 shadow-[0_15px_40px_-10px_rgba(16,185,129,0.25)] relative overflow-hidden">
+            <div className="absolute top-0 right-0 -mr-6 -mt-6 w-32 h-32 bg-emerald-500/20 rounded-full blur-2xl pointer-events-none"></div>
+            <div className="relative z-10 flex flex-col justify-center">
+              <p className="text-[11px] font-bold uppercase tracking-wider mb-1.5 text-emerald-400/90 flex items-center gap-1.5">
+                <Briefcase className="w-3.5 h-3.5"/> Total Investido
+              </p>
+              <p className="text-3xl sm:text-4xl font-bold font-mono tracking-tighter break-words text-white drop-shadow-md">
+                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(currentPortfolioTotal)}
+              </p>
             </div>
-            <div className="flex-1 min-w-0">
-              <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Hora (Opcional)</label>
-              <input type="time" className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:border-blue-500 outline-none color-scheme-dark transition-all" value={newTask.dueTime} onChange={e => setNewTask({...newTask, dueTime: e.target.value})}/>
-            </div>
-          </div>
-          
-          <div className="flex gap-4 items-end">
-            <div className="flex-1 min-w-0">
-              <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Recorrência</label>
-              <select className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:border-blue-500 outline-none appearance-none truncate transition-all" value={newTask.recurrence} onChange={e => setNewTask({...newTask, recurrence: e.target.value})}>
-                <option value="none">Nenhuma</option>
-                <option value="daily">Diária</option>
-                <option value="weekly">Semanal</option>
-                <option value="monthly">Mensal</option>
-                <option value="yearly">Anual</option>
-              </select>
-            </div>
-            
-            <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border transition-colors cursor-pointer ${newTask.hasReminder ? 'bg-blue-500/20 border-blue-500/50 text-blue-400' : 'bg-slate-900 border-slate-700 text-slate-400'}`}>
-               <Volume2 className="w-4 h-4" />
-               <span className="text-sm font-bold">Alerta</span>
-               <input type="checkbox" className="sr-only" checked={newTask.hasReminder} onChange={e => setNewTask({...newTask, hasReminder: e.target.checked})}/>
-            </label>
           </div>
 
           <div>
-            <div className="flex justify-between items-center mb-3">
-              <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider">Categoria</label>
-              <button type="button" onClick={() => { hapticFeedback(20); setIsEditingCategories(!isEditingCategories); }} className="text-xs font-medium text-blue-400 bg-blue-500/10 px-2 py-1 rounded-md">{isEditingCategories ? 'Concluir' : 'Editar Lista'}</button>
-            </div>
-            {isEditingCategories ? (
-              <div className="bg-slate-900 border border-slate-700 rounded-xl p-3 space-y-2">
-                <div className="max-h-36 overflow-y-auto space-y-2 pr-1 hide-scrollbar">
-                  {taskCategories.map(cat => {
-                    try {
-                      if(!cat || typeof cat !== 'object') return null;
-                      const safeLabel = typeof cat.label === 'string' ? cat.label : 'Categoria';
-                      return (
-                      <SwipeableItem key={cat.id || Math.random()} wrapperClass="mb-0" frontClass="p-2.5 bg-slate-800 border-slate-700 flex justify-between items-center" onEdit={() => setEditPrompt({ type: 'category', id: cat.id, label: safeLabel })} onDeleteRequest={() => setDeletePrompt({ type: 'category', id: cat.id, title: safeLabel })}>
-                        <span className="text-slate-200 truncate pr-2 font-medium w-full">{safeLabel}</span>
-                      </SwipeableItem>
-                    )} catch(e) { return null; }
-                  })}
-                </div>
-                <div className="flex gap-2 mt-2 pt-2 border-t border-slate-700/50">
-                  <input type="text" value={newCategoryLabel} onChange={e => setNewCategoryLabel(e.target.value)} className="flex-1 bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-sm text-white" placeholder="Nova..." />
-                  <button type="button" onClick={handleAddCategory} className="bg-blue-600 text-white px-4 rounded-lg text-sm font-medium">Adicionar</button>
-                </div>
-              </div>
+            <h2 className="text-sm font-bold uppercase tracking-widest text-blue-400 mb-4 px-1 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" /> Foco do Dia
+            </h2>
+            {focusOfDayTasks.length === 0 && dayTasksForDashboard.length === 0 ? (
+               <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl text-center border-dashed">
+                 <p className="text-slate-400 font-medium text-sm">O seu foco do dia está limpo! ✨</p>
+               </div>
             ) : (
-              <div className="flex gap-3 overflow-x-auto pb-4 hide-scrollbar -mx-2 px-2 snap-x snap-mandatory">
-                {taskCategories.map(cat => {
-                  try {
-                    if(!cat || typeof cat !== 'object') return null;
-                    const isSelected = newTask.category === cat.id;
+              <div className="space-y-2">
+                {focusOfDayTasks.map((task) => {
+                    if(!task) return null;
+                    const status = getTaskStatus(task.dueDate, task.completed);
+                    const classStr = getStatusColors(status);
+                    const safeTitle = task.title || 'Sem Título';
                     return (
-                      <button key={cat.id || Math.random()} type="button" onClick={() => { hapticFeedback(40); setNewTask({...newTask, category: cat.id}); }} className={`relative snap-center shrink-0 px-6 py-3.5 rounded-2xl text-sm font-bold transition-all duration-300 border-2 active:scale-95 ${isSelected ? 'bg-gradient-to-br from-blue-500 to-blue-600 border-blue-400 text-white scale-105' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>
-                        {isSelected && <span className="absolute -inset-1 rounded-2xl border border-blue-400/50 animate-pulse pointer-events-none"></span>}
-                        {typeof cat.label === 'string' ? cat.label : 'Cat'}
-                      </button>
+                      <div key={task.id || Math.random()} data-drag-id={task.id} className="transition-transform duration-200 ease-in-out">
+                        <SwipeableItem onEdit={() => startEditTask(task)} onDeleteRequest={() => setDeletePrompt({ type: 'task', id: task.id, title: safeTitle })} frontClass={`${classStr} p-4 flex items-center gap-3`} wrapperClass="mb-0">
+                          <button onClick={() => toggleTask(task.id)} className={`w-6 h-6 rounded-md border flex items-center justify-center transition-all duration-300 shrink-0 active:scale-75 ${task.completed ? 'bg-blue-600 border-blue-600 shadow-[0_0_10px_rgba(59,130,246,0.5)]' : 'border-slate-500'}`}>
+                            {task.completed && <Check className="w-4 h-4 text-white" />}
+                          </button>
+                          <div className="flex-1 min-w-0 pointer-events-none">
+                            <h3 className={`font-bold text-sm truncate transition-colors ${task.completed ? 'line-through text-slate-500' : 'text-slate-100'}`}>{safeTitle}</h3>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className={`text-[10px] uppercase font-bold tracking-wider opacity-80`}>
+                                {status === 'overdue' ? 'Atrasada' : 'Hoje'} {task.dueTime ? `• ${task.dueTime}` : ''}
+                              </span>
+                              {task.hasReminder && !task.completed && <BellRing className={`w-3 h-3 ${status==='overdue' ? 'animate-pulse' : ''}`} />}
+                            </div>
+                          </div>
+                          {!task.completed && (
+                            <div className="p-2 -mr-2 cursor-grab active:cursor-grabbing opacity-50 hover:opacity-100" style={{ touchAction: 'none' }} onTouchStart={(e) => handleDragStart(e, task.id)} onTouchMove={handleDragMove} onTouchEnd={handleDragEnd} onMouseDown={(e) => handleDragStart(e, task.id)} onMouseMove={handleDragMove} onMouseUp={handleDragEnd} onMouseLeave={handleDragEnd}>
+                              <GripVertical className="w-5 h-5 pointer-events-none" />
+                            </div>
+                          )}
+                        </SwipeableItem>
+                      </div>
                     );
-                  } catch(e) { return null; }
+                })}
+                {dayTasksForDashboard.map(task => {
+                    if(!task) return null;
+                    const safeText = task.text || 'Compromisso';
+                    return (
+                    <SwipeableItem key={`rt_${task.id || Math.random()}`} onEdit={()=>{}} onDeleteRequest={() => setDeletePrompt({ type: 'dailyTask', id: task.id, title: safeText, dateStr: todayStr })} frontClass="bg-slate-800/80 border-slate-700/80 p-3.5 flex items-center justify-between" wrapperClass="mb-0" isDragDisabled>
+                      <label className="flex items-center gap-3 cursor-pointer flex-1 w-full">
+                        <div className="relative flex items-center justify-center w-6 h-6 shrink-0">
+                          <input type="checkbox" checked={!!task.completed} onChange={() => toggleDailyTask(todayStr, task.id)} className="peer sr-only"/>
+                          <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all duration-200 active:scale-75 ${task.completed ? 'bg-blue-500 border-blue-500' : 'border-slate-500'}`}>
+                            {task.completed && <Check className="w-3.5 h-3.5 text-white" />}
+                          </div>
+                        </div>
+                        <span className={`text-sm font-medium transition-colors ${task.completed ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{safeText}</span>
+                      </label>
+                    </SwipeableItem>
+                  )
                 })}
               </div>
             )}
           </div>
-          <div className="flex gap-3 pt-2 border-t border-slate-700/50">
-            <button type="button" onClick={cancelEditTask} className="px-5 py-3 bg-slate-800 text-slate-300 rounded-xl font-medium">Cancelar</button>
-            <button type="submit" className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-blue-500/30">Salvar Tarefa</button>
-          </div>
-        </form>
-      )}
 
-      {!showAddTask && tasks.length > 0 && <SwipeHint />}
-
-      <div className="space-y-1">
-        {/* CORREÇÃO DO MOTOR DE DATAS: O mesmo da Página Inicial */}
-        {sortedTasksGlobally.map(task => {
-          try {
-            if (!task || typeof task !== 'object') return null; 
-            
-            const status = getTaskStatus(task.dueDate, task.completed);
-            const classStr = getStatusColors(status, status === 'overdue');
-            
-            let categoryLabel = 'Geral';
-            try {
-              const categoryObj = taskCategories.find(c => c && c.id === task.category);
-              if (categoryObj && typeof categoryObj.label === 'string') {
-                 categoryLabel = categoryObj.label;
-              } else if (typeof task.category === 'string') {
-                 categoryLabel = task.category;
-              }
-            } catch(e){}
-
-            const safeTitle = typeof task.title === 'string' ? task.title : 'Sem Título';
-            const safeDueTime = typeof task.dueTime === 'string' ? task.dueTime : '';
-            
-            const recurrenceLabels = { daily: 'Diária', weekly: 'Semanal', monthly: 'Mensal', yearly: 'Anual' };
-            const recLabel = typeof task.recurrence === 'string' ? recurrenceLabels[task.recurrence] : null;
-            
-            return (
-              <SwipeableItem key={task.id || Math.random()} onEdit={() => startEditTask(task)} onDeleteRequest={() => setDeletePrompt({ type: 'task', id: task.id, title: safeTitle })} frontClass={`${classStr} p-4 flex items-center gap-4`}>
-                <button onClick={() => toggleTask(task.id)} className={`w-6 h-6 rounded-md border flex items-center justify-center shrink-0 active:scale-75 ${task.completed ? 'bg-blue-600 border-blue-600' : 'border-slate-500'}`}>
-                  {task.completed && <Check className="w-4 h-4 text-white" />}
-                </button>
-                
-                <div className="flex-1 min-w-0 pointer-events-none">
-                  <div className="flex justify-between items-center">
-                     <h3 className={`font-bold truncate transition-colors`}>{safeTitle}</h3>
-                     {!task.completed && task.hasReminder && <BellRing className={`w-4 h-4 shrink-0 opacity-80`} />}
-                  </div>
-                  <p className="text-xs flex items-center gap-2 mt-1 opacity-80">
-                    <span className="capitalize">{categoryLabel}</span>
-                    <span>•</span>
-                    <span>{formatDateLocal(task.dueDate)} {safeDueTime && `• ${safeDueTime}`}</span>
-                    {recLabel && (
-                       <>
-                         <span>•</span>
-                         <span className="text-blue-400 flex items-center gap-1">🔁 {recLabel}</span>
-                       </>
-                    )}
-                  </p>
-                </div>
-              </SwipeableItem>
-            );
-          } catch(e) {
-            return null; 
-          }
-        })}
-      </div>
-    </div>
-  );
-
-  const renderRoutine = () => {
-    const dateStr = selectedDate.toISOString().split('T')[0];
-    const dayHabits = safeHabits[dateStr] || {};
-    const dayTasks = Array.isArray(safeDailyTasks[dateStr]) ? safeDailyTasks[dateStr] : [];
-
-    const totalItems = habitsList.length + dayTasks.length;
-    const completedItems = habitsList.filter(h => h && dayHabits[h.id]).length + dayTasks.filter(t => t && t.completed).length;
-    const progressPercent = totalItems === 0 ? 0 : Math.round((completedItems / totalItems) * 100);
-
-    return (
-      <div className="space-y-6 animate-in fade-in pb-6">
-        <header className="mb-6">
-          <h1 className="text-2xl font-bold text-slate-100">Foco</h1>
-          <p className="text-slate-400">A sua rotina fina e compromissos rápidos.</p>
-        </header>
-
-        <div className="flex items-center justify-between bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-md">
-          <button onClick={() => {const d=new Date(selectedDate); d.setDate(d.getDate()-1); setSelectedDate(d);}} className="p-2 text-slate-400 hover:text-white"><ChevronLeft /></button>
-          <div className="text-center">
-            <p className="text-sm font-semibold text-blue-400 uppercase tracking-widest">{selectedDate.toLocaleDateString('pt-BR', { weekday: 'long' })}</p>
-            <p className="text-xl font-bold text-white">{selectedDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' })}</p>
-          </div>
-          <button onClick={() => {const d=new Date(selectedDate); d.setDate(d.getDate()+1); setSelectedDate(d);}} className="p-2 text-slate-400 hover:text-white"><ChevronRight /></button>
-        </div>
-
-        <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 relative overflow-hidden">
-          <div className="flex justify-between items-end mb-2 relative z-10">
-            <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-0.5">Progresso do Dia</p>
-              <p className="text-sm font-medium text-slate-300">{completedItems} de {totalItems} concluídos</p>
-            </div>
-            <span className="text-2xl font-bold font-mono text-blue-400">{progressPercent}%</span>
-          </div>
-          <div className="w-full h-2.5 bg-slate-900 rounded-full overflow-hidden">
-            <div className="h-full rounded-full bg-blue-500 transition-all duration-500" style={{ width: `${progressPercent}%` }}></div>
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2 px-1">
-            <CheckCircle2 className="w-4 h-4 text-blue-400" /> Foco do Dia (Sincronizado)
-          </h2>
-          <form onSubmit={handleAddDailyTask} className="flex gap-2">
-            <input type="text" className="flex-1 bg-slate-800 border border-slate-700 rounded-xl p-3 text-sm text-white" value={newDailyTask} onChange={e => setNewDailyTask(e.target.value)} placeholder="+ Adicionar compromisso rápido..."/>
-            <button type="submit" disabled={!newDailyTask.trim()} className="bg-blue-600 disabled:opacity-50 text-white px-4 rounded-xl text-sm font-medium">Add</button>
-          </form>
-
-          <div className="space-y-2 mt-3">
-            {dayTasks.map(task => {
-              try {
-                if(!task || typeof task !== 'object') return null;
-                const safeText = typeof task.text === 'string' ? task.text : 'Compromisso';
-                return(
-                <SwipeableItem key={task.id || Math.random()} frontClass="bg-slate-800/80 border-slate-700/80 p-3.5 flex items-center justify-between" wrapperClass="mb-0" onEdit={()=>{}} onDeleteRequest={() => setDeletePrompt({ type: 'dailyTask', id: task.id, title: safeText, dateStr })}>
-                  <label className="flex items-center gap-3 cursor-pointer flex-1 w-full">
-                    <div className="relative flex items-center justify-center w-6 h-6 shrink-0">
-                      <input type="checkbox" checked={!!task.completed} onChange={() => toggleDailyTask(dateStr, task.id)} className="peer sr-only"/>
-                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all duration-200 active:scale-75 ${task.completed ? 'bg-blue-500 border-blue-500' : 'border-slate-500'}`}>
-                        {task.completed && <Check className="w-3.5 h-3.5 text-white" />}
-                      </div>
-                    </div>
-                    <span className={`text-sm font-medium transition-colors ${task.completed ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{safeText}</span>
-                  </label>
-                </SwipeableItem>
-                );
-              } catch(e) { return null; }
-            })}
-          </div>
-        </div>
-
-        <div className="space-y-3 pt-4 border-t border-slate-800">
-          <div className="flex justify-between items-center px-1">
-            <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2"><Activity className="w-4 h-4 text-emerald-400" /> Hábitos Fixos</h2>
-            <button onClick={() => setShowAddHabit(!showAddHabit)} className="text-xs font-medium text-blue-400 bg-blue-500/10 px-2 py-1 rounded-md">Editar</button>
-          </div>
-          {showAddHabit && (
-            <form onSubmit={handleAddHabit} className="bg-slate-800 p-3.5 rounded-xl border border-slate-700 mb-4 flex gap-2">
-              <input type="text" required autoFocus className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white" value={newHabitLabel} onChange={e => setNewHabitLabel(e.target.value)} placeholder="Novo hábito..."/>
-              <button type="submit" className="bg-emerald-600 text-white px-4 rounded-lg text-sm font-medium">Salvar</button>
-            </form>
-          )}
-          <div className="space-y-2">
-            {habitsList.map(habit => {
-              try {
-                if(!habit || typeof habit !== 'object') return null;
-                const isDone = !!dayHabits[habit.id];
-                const safeLabel = typeof habit.label === 'string' ? habit.label : 'Hábito';
-                return (
-                  <SwipeableItem key={habit.id || Math.random()} frontClass="bg-slate-800 border-slate-700 p-4 flex items-center justify-between" wrapperClass="mb-0" onEdit={() => setEditPrompt({ type: 'habit', id: habit.id, label: safeLabel })} onDeleteRequest={() => setDeletePrompt({ type: 'habit', id: habit.id, title: safeLabel })}>
-                    <label className="flex items-center gap-4 cursor-pointer flex-1 w-full">
-                      <div className="relative flex items-center justify-center w-8 h-8 shrink-0">
-                        <input type="checkbox" checked={isDone} onChange={() => toggleHabit(dateStr, habit.id)} className="peer sr-only" />
-                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all duration-300 active:scale-75 ${isDone ? 'bg-emerald-500 border-emerald-500' : 'border-slate-500'}`}>
-                          {isDone && <Check className="w-4 h-4 text-white" />}
+          <div>
+            <h2 className="text-sm font-bold uppercase tracking-widest text-slate-400 mb-4 px-1 flex items-center gap-2">
+              <CalendarClock className="w-4 h-4" /> Próximos Dias
+            </h2>
+            {upcomingTasks.length > 0 ? (
+              <div className="space-y-2 opacity-95">
+                {upcomingTasks.map(task => {
+                    if(!task) return null;
+                    const status = getTaskStatus(task.dueDate, task.completed);
+                    const classStr = getStatusColors(status);
+                    const safeTitle = task.title || 'Sem Título';
+                    return (
+                      <SwipeableItem key={task.id || Math.random()} onEdit={() => startEditTask(task)} onDeleteRequest={() => setDeletePrompt({ type: 'task', id: task.id, title: safeTitle })} frontClass={`${classStr} p-4 flex items-center gap-3`} wrapperClass="mb-0">
+                        <button onClick={() => toggleTask(task.id)} className={`w-6 h-6 rounded-md border flex items-center justify-center transition-all duration-300 shrink-0 active:scale-75 ${task.completed ? 'bg-blue-600 border-blue-600' : 'border-slate-500'}`}>
+                          {task.completed && <Check className="w-4 h-4 text-white" />}
+                        </button>
+                        <div className="flex-1 min-w-0 pointer-events-none">
+                          <h3 className={`font-medium text-sm truncate transition-colors`}>{safeTitle}</h3>
+                          <p className="text-[11px] opacity-70 font-mono mt-0.5">
+                            {formatDateLocal(task.dueDate)} {task.dueTime ? `• ${task.dueTime}` : ''}
+                          </p>
                         </div>
-                      </div>
-                      <span className={`text-base font-medium ${isDone ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{safeLabel}</span>
-                    </label>
-                  </SwipeableItem>
-                );
-              } catch(e) { return null; }
-            })}
+                      </SwipeableItem>
+                    );
+                })}
+              </div>
+            ) : (
+               <p className="text-sm text-slate-500 italic px-2">Sem tarefas para os próximos dias.</p>
+            )}
           </div>
         </div>
-      </div>
-    );
+      );
+    } catch (error) {
+      return <div className="p-4 bg-red-900/50 text-red-200 rounded-xl">Erro Tela Início: {error.message}</div>;
+    }
   };
 
-  const renderPortfolio = () => (
-    <div className="space-y-6 animate-in fade-in pb-6">
-      <header className="flex justify-between items-start mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-100">Ativos</h1>
-          <p className="text-slate-400">Distribuição do seu património.</p>
-        </div>
-        <button onClick={() => { hapticFeedback(30); setIsEditingPortfolioCats(!isEditingPortfolioCats); }} className={`p-2 rounded-full transition-colors active:scale-95 ${isEditingPortfolioCats ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'bg-slate-800 text-slate-400 hover:text-slate-200'}`}>
-          <Edit2 className="w-5 h-5" />
-        </button>
-      </header>
+  const renderTasks = () => {
+    try {
+      return (
+        <div className="space-y-6 animate-in fade-in pb-6">
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="text-2xl font-bold text-slate-100">Agenda Completa</h1>
+            <button onClick={() => { cancelEditTask(); setNewTask(prev => ({ ...prev, category: taskCategories[0]?.id || 'meta' })); setShowAddTask(true); hapticFeedback(30); }} className="bg-blue-600 hover:bg-blue-500 text-white p-2 rounded-full transition-colors shadow-lg shadow-blue-500/30 active:scale-95">
+              <Plus className="w-5 h-5" />
+            </button>
+          </div>
 
-      {isEditingPortfolioCats ? (
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 space-y-2 animate-in fade-in shadow-lg">
-          <SwipeHint />
-          <div className="max-h-64 overflow-y-auto space-y-2 pr-1 hide-scrollbar">
-            {portfolioCategories.map(cat => {
-              try {
-                if(!cat || typeof cat !== 'object') return null;
-                const safeLabel = typeof cat.label === 'string' ? cat.label : 'Ativo';
+          {showAddTask && (
+            <form onSubmit={handleSaveTask} className="bg-slate-800 p-5 rounded-2xl border border-slate-700 mb-6 space-y-5 shadow-lg">
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Título da Tarefa</label>
+                <input type="text" required className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:border-blue-500 focus:ring-1 outline-none transition-all" value={newTask.title} onChange={e => setNewTask({...newTask, title: e.target.value})} placeholder="Ex: Reunião de Equipa"/>
+              </div>
+              <div className="flex gap-4">
+                <div className="flex-1 min-w-0">
+                  <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Data</label>
+                  <input type="date" required className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:border-blue-500 outline-none color-scheme-dark transition-all" value={newTask.dueDate} onChange={e => setNewTask({...newTask, dueDate: e.target.value})}/>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Hora (Opcional)</label>
+                  <input type="time" className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:border-blue-500 outline-none color-scheme-dark transition-all" value={newTask.dueTime} onChange={e => setNewTask({...newTask, dueTime: e.target.value})}/>
+                </div>
+              </div>
+              
+              <div className="flex gap-4 items-end">
+                <div className="flex-1 min-w-0">
+                  <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Recorrência</label>
+                  <select className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:border-blue-500 outline-none appearance-none truncate transition-all" value={newTask.recurrence} onChange={e => setNewTask({...newTask, recurrence: e.target.value})}>
+                    <option value="none">Nenhuma</option>
+                    <option value="daily">Diária</option>
+                    <option value="weekly">Semanal</option>
+                    <option value="monthly">Mensal</option>
+                    <option value="yearly">Anual</option>
+                  </select>
+                </div>
+                
+                <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border transition-colors cursor-pointer ${newTask.hasReminder ? 'bg-blue-500/20 border-blue-500/50 text-blue-400' : 'bg-slate-900 border-slate-700 text-slate-400'}`}>
+                   <Volume2 className="w-4 h-4" />
+                   <span className="text-sm font-bold">Alerta</span>
+                   <input type="checkbox" className="sr-only" checked={newTask.hasReminder} onChange={e => setNewTask({...newTask, hasReminder: e.target.checked})}/>
+                </label>
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-3">
+                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider">Categoria</label>
+                  <button type="button" onClick={() => { hapticFeedback(20); setIsEditingCategories(!isEditingCategories); }} className="text-xs font-medium text-blue-400 bg-blue-500/10 px-2 py-1 rounded-md">{isEditingCategories ? 'Concluir' : 'Editar Lista'}</button>
+                </div>
+                {isEditingCategories ? (
+                  <div className="bg-slate-900 border border-slate-700 rounded-xl p-3 space-y-2">
+                    <div className="max-h-36 overflow-y-auto space-y-2 pr-1 hide-scrollbar">
+                      {taskCategories.map(cat => {
+                          if(!cat || !cat.id) return null;
+                          const safeLabel = cat.label || 'Sem Nome';
+                          return (
+                          <SwipeableItem key={cat.id} wrapperClass="mb-0" frontClass="p-2.5 bg-slate-800 border-slate-700 flex justify-between items-center" onEdit={() => setEditPrompt({ type: 'category', id: cat.id, label: safeLabel })} onDeleteRequest={() => setDeletePrompt({ type: 'category', id: cat.id, title: safeLabel })}>
+                            <span className="text-slate-200 truncate pr-2 font-medium w-full">{safeLabel}</span>
+                          </SwipeableItem>
+                        )
+                      })}
+                    </div>
+                    <div className="flex gap-2 mt-2 pt-2 border-t border-slate-700/50">
+                      <input type="text" value={newCategoryLabel} onChange={e => setNewCategoryLabel(e.target.value)} className="flex-1 bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-sm text-white" placeholder="Nova..." />
+                      <button type="button" onClick={handleAddCategory} className="bg-blue-600 text-white px-4 rounded-lg text-sm font-medium">Adicionar</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex gap-3 overflow-x-auto pb-4 hide-scrollbar -mx-2 px-2 snap-x snap-mandatory">
+                    {taskCategories.map(cat => {
+                        if(!cat || !cat.id) return null;
+                        const isSelected = newTask.category === cat.id;
+                        return (
+                          <button key={cat.id} type="button" onClick={() => { hapticFeedback(40); setNewTask({...newTask, category: cat.id}); }} className={`relative snap-center shrink-0 px-6 py-3.5 rounded-2xl text-sm font-bold transition-all duration-300 border-2 active:scale-95 ${isSelected ? 'bg-gradient-to-br from-blue-500 to-blue-600 border-blue-400 text-white scale-105' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>
+                            {isSelected && <span className="absolute -inset-1 rounded-2xl border border-blue-400/50 animate-pulse pointer-events-none"></span>}
+                            {cat.label || 'Cat'}
+                          </button>
+                        );
+                    })}
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-3 pt-2 border-t border-slate-700/50">
+                <button type="button" onClick={cancelEditTask} className="px-5 py-3 bg-slate-800 text-slate-300 rounded-xl font-medium">Cancelar</button>
+                <button type="submit" className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-blue-500/30">Salvar Tarefa</button>
+              </div>
+            </form>
+          )}
+
+          <div className="space-y-1">
+            {sortedTasksGlobally.map(task => {
+                if (!task || !task.id) return null; 
+                
+                const status = getTaskStatus(task.dueDate, task.completed);
+                const classStr = getStatusColors(status);
+                
+                const categoryObj = taskCategories.find(c => c && c.id === task.category);
+                const categoryLabel = categoryObj?.label || task.category || 'Geral';
+                const safeTitle = task.title || 'Sem Título';
+                
+                const recurrenceLabels = { daily: 'Diária', weekly: 'Semanal', monthly: 'Mensal', yearly: 'Anual' };
+                const recLabel = task.recurrence ? recurrenceLabels[task.recurrence] : null;
+                
                 return (
-                <SwipeableItem key={cat.id || Math.random()} wrapperClass="mb-0" frontClass="p-3 bg-slate-900 border-slate-700 flex justify-between items-center" onEdit={() => setEditPrompt({ type: 'portfolioCat', id: cat.id, label: safeLabel })} onDeleteRequest={() => setDeletePrompt({ type: 'portfolioCat', id: cat.id, title: safeLabel })}>
-                  <span className="text-slate-200 truncate pr-2 font-medium w-full">{safeLabel}</span>
-                </SwipeableItem>
+                  <SwipeableItem key={task.id} onEdit={() => startEditTask(task)} onDeleteRequest={() => setDeletePrompt({ type: 'task', id: task.id, title: safeTitle })} frontClass={`${classStr} p-4 flex items-center gap-4`}>
+                    <button onClick={() => toggleTask(task.id)} className={`w-6 h-6 rounded-md border flex items-center justify-center shrink-0 active:scale-75 ${task.completed ? 'bg-blue-600 border-blue-600' : 'border-slate-500'}`}>
+                      {task.completed && <Check className="w-4 h-4 text-white" />}
+                    </button>
+                    
+                    <div className="flex-1 min-w-0 pointer-events-none">
+                      <div className="flex justify-between items-center">
+                         <h3 className={`font-bold truncate transition-colors`}>{safeTitle}</h3>
+                         {!task.completed && task.hasReminder && <BellRing className={`w-4 h-4 shrink-0 opacity-80`} />}
+                      </div>
+                      <p className="text-xs flex items-center gap-2 mt-1 opacity-80">
+                        <span className="capitalize">{categoryLabel}</span>
+                        <span>•</span>
+                        <span>{formatDateLocal(task.dueDate)} {task.dueTime && `• ${task.dueTime}`}</span>
+                        {recLabel && (
+                           <>
+                             <span>•</span>
+                             <span className="text-blue-400 flex items-center gap-1">🔁 {recLabel}</span>
+                           </>
+                        )}
+                      </p>
+                    </div>
+                  </SwipeableItem>
                 );
-              } catch(e) { return null; }
             })}
           </div>
-          <div className="flex gap-2 mt-2 pt-4 border-t border-slate-700/50">
-            <input type="text" value={newPortfolioCatLabel} onChange={e => setNewPortfolioCatLabel(e.target.value)} className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white" placeholder="Novo ativo..." />
-            <button type="button" onClick={handleAddPortfolioCategory} className="bg-blue-600 text-white px-4 rounded-lg text-sm font-medium">Adicionar</button>
-          </div>
         </div>
-      ) : (
-        <div className="space-y-4">
-          {portfolioCategories.map(cat => {
-            try {
-              if(!cat || typeof cat !== 'object') return null;
-              const catValueNum = parseCurrencyToNumber(safePortfolio[cat.id]);
-              const percent = currentPortfolioTotal > 0 ? ((catValueNum / currentPortfolioTotal) * 100).toFixed(1) : 0;
-              const safeLabel = typeof cat.label === 'string' ? cat.label : 'Ativo';
-              
-              return (
-                <div key={cat.id || Math.random()} className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm focus-within:border-blue-500/50 transition-all flex flex-col gap-3">
-                  <div className="flex justify-between items-center">
-                    <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">{safeLabel}</label>
-                    <span className="text-[10px] font-bold px-2 py-1 bg-slate-900 text-blue-400 rounded-md border border-slate-700">
-                      {percent}% da carteira
-                    </span>
-                  </div>
-                  
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-medium text-sm">R$</span>
-                    <input type="text" inputMode="numeric" placeholder="0,00" value={safePortfolio[cat.id] || ''} onChange={e => handlePortfolioChange(cat.id, e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg py-3 pl-9 pr-3 text-white font-mono focus:outline-none transition-colors text-base tracking-tighter shadow-inner" />
-                  </div>
-                  <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
-                    <div className="bg-blue-500 h-1.5 rounded-full" style={{ width: `${percent}%` }}></div>
-                  </div>
-                </div>
-              );
-            } catch(e) { return null; }
-          })}
-        </div>
-      )}
-      
-      <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm flex items-center justify-between">
-        <label className="text-sm font-semibold text-slate-300">Data Base</label>
-        <input type="date" value={portfolioUpdateDate} onChange={e => setPortfolioUpdateDate(e.target.value)} className="bg-slate-900 border border-slate-700 rounded-lg p-2 text-white font-medium text-sm color-scheme-dark" />
-      </div>
+      );
+    } catch (error) {
+      return <div className="p-4 bg-red-900/50 text-red-200 rounded-xl">Erro Agenda: {error.message}</div>;
+    }
+  };
 
-      <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700 shadow-lg mt-8 relative overflow-hidden">
-        <div className={`absolute top-0 right-0 -mr-10 -mt-10 w-40 h-40 rounded-full blur-3xl pointer-events-none transition-colors duration-500 ${isPortfolioPositive ? 'bg-emerald-500/10' : 'bg-red-500/10'}`}></div>
-        <h3 className="text-lg font-bold text-white mb-5 flex items-center gap-2 relative z-10"><Activity className="w-5 h-5 text-blue-400"/> Evolução</h3>
-        <div className="grid grid-cols-2 gap-3 mb-4 relative z-10">
-          <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-700/50">
-            <p className="text-slate-400 text-[10px] font-bold uppercase mb-1.5">Saldo Anterior</p>
-            <div className="relative">
-              <span className="absolute left-0 top-1/2 -translate-y-1/2 text-slate-500 text-[13px]">R$</span>
-              <input type="text" inputMode="numeric" placeholder="0,00" value={prevPortfolioBalance} onChange={e => handlePrevBalanceChange(e.target.value)} className="w-full bg-transparent pl-[1.35rem] pr-1 text-white font-mono focus:outline-none text-[14px]" />
+  const renderRoutine = () => {
+    try {
+      const dateStr = selectedDate.toISOString().split('T')[0];
+      const dayHabits = safeHabits[dateStr] || {};
+      const dayTasks = Array.isArray(safeDailyTasks[dateStr]) ? safeDailyTasks[dateStr] : [];
+
+      const totalItems = habitsList.length + dayTasks.length;
+      const completedItems = habitsList.filter(h => h && dayHabits[h.id]).length + dayTasks.filter(t => t && t.completed).length;
+      const progressPercent = totalItems === 0 ? 0 : Math.round((completedItems / totalItems) * 100);
+
+      return (
+        <div className="space-y-6 animate-in fade-in pb-6">
+          <header className="mb-6">
+            <h1 className="text-2xl font-bold text-slate-100">Foco</h1>
+            <p className="text-slate-400">A sua rotina fina e compromissos rápidos.</p>
+          </header>
+
+          <div className="flex items-center justify-between bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-md">
+            <button onClick={() => {const d=new Date(selectedDate); d.setDate(d.getDate()-1); setSelectedDate(d);}} className="p-2 text-slate-400 hover:text-white"><ChevronLeft /></button>
+            <div className="text-center">
+              <p className="text-sm font-semibold text-blue-400 uppercase tracking-widest">{selectedDate.toLocaleDateString('pt-BR', { weekday: 'long' })}</p>
+              <p className="text-xl font-bold text-white">{selectedDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' })}</p>
+            </div>
+            <button onClick={() => {const d=new Date(selectedDate); d.setDate(d.getDate()+1); setSelectedDate(d);}} className="p-2 text-slate-400 hover:text-white"><ChevronRight /></button>
+          </div>
+
+          <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 relative overflow-hidden">
+            <div className="flex justify-between items-end mb-2 relative z-10">
+              <div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-0.5">Progresso do Dia</p>
+                <p className="text-sm font-medium text-slate-300">{completedItems} de {totalItems} concluídos</p>
+              </div>
+              <span className="text-2xl font-bold font-mono text-blue-400">{progressPercent}%</span>
+            </div>
+            <div className="w-full h-2.5 bg-slate-900 rounded-full overflow-hidden">
+              <div className="h-full rounded-full bg-blue-500 transition-all duration-500" style={{ width: `${progressPercent}%` }}></div>
             </div>
           </div>
-          <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-700/50">
-            <p className="text-slate-400 text-[10px] font-bold uppercase mb-1.5">Saldo Atual</p>
-            <p className="text-[14px] font-mono text-white pt-0.5">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(currentPortfolioTotal)}</p>
+
+          <div className="space-y-3">
+            <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2 px-1">
+              <CheckCircle2 className="w-4 h-4 text-blue-400" /> Foco do Dia (Sincronizado)
+            </h2>
+            <form onSubmit={handleAddDailyTask} className="flex gap-2">
+              <input type="text" className="flex-1 bg-slate-800 border border-slate-700 rounded-xl p-3 text-sm text-white" value={newDailyTask} onChange={e => setNewDailyTask(e.target.value)} placeholder="+ Adicionar compromisso rápido..."/>
+              <button type="submit" disabled={!newDailyTask.trim()} className="bg-blue-600 disabled:opacity-50 text-white px-4 rounded-xl text-sm font-medium">Add</button>
+            </form>
+
+            <div className="space-y-2 mt-3">
+              {dayTasks.map(task => {
+                  if(!task || !task.id) return null;
+                  const safeText = task.text || 'Compromisso';
+                  return(
+                  <SwipeableItem key={task.id} frontClass="bg-slate-800/80 border-slate-700/80 p-3.5 flex items-center justify-between" wrapperClass="mb-0" onEdit={()=>{}} onDeleteRequest={() => setDeletePrompt({ type: 'dailyTask', id: task.id, title: safeText, dateStr: dateStr })}>
+                    <label className="flex items-center gap-3 cursor-pointer flex-1 w-full">
+                      <div className="relative flex items-center justify-center w-6 h-6 shrink-0">
+                        <input type="checkbox" checked={!!task.completed} onChange={() => toggleDailyTask(dateStr, task.id)} className="peer sr-only"/>
+                        <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all duration-200 active:scale-75 ${task.completed ? 'bg-blue-500 border-blue-500' : 'border-slate-500'}`}>
+                          {task.completed && <Check className="w-3.5 h-3.5 text-white" />}
+                        </div>
+                      </div>
+                      <span className={`text-sm font-medium transition-colors ${task.completed ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{safeText}</span>
+                    </label>
+                  </SwipeableItem>
+                  );
+              })}
+            </div>
+          </div>
+
+          <div className="space-y-3 pt-4 border-t border-slate-800">
+            <div className="flex justify-between items-center px-1">
+              <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2"><Activity className="w-4 h-4 text-emerald-400" /> Hábitos Fixos</h2>
+              <button onClick={() => setShowAddHabit(!showAddHabit)} className="text-xs font-medium text-blue-400 bg-blue-500/10 px-2 py-1 rounded-md">Editar</button>
+            </div>
+            {showAddHabit && (
+              <form onSubmit={handleAddHabit} className="bg-slate-800 p-3.5 rounded-xl border border-slate-700 mb-4 flex gap-2">
+                <input type="text" required autoFocus className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white" value={newHabitLabel} onChange={e => setNewHabitLabel(e.target.value)} placeholder="Novo hábito..."/>
+                <button type="submit" className="bg-emerald-600 text-white px-4 rounded-lg text-sm font-medium">Salvar</button>
+              </form>
+            )}
+            <div className="space-y-2">
+              {habitsList.map(habit => {
+                  if(!habit || !habit.id) return null;
+                  const isDone = !!dayHabits[habit.id];
+                  const safeLabel = habit.label || 'Hábito';
+                  return (
+                    <SwipeableItem key={habit.id} frontClass="bg-slate-800 border-slate-700 p-4 flex items-center justify-between" wrapperClass="mb-0" onEdit={() => setEditPrompt({ type: 'habit', id: habit.id, label: safeLabel })} onDeleteRequest={() => setDeletePrompt({ type: 'habit', id: habit.id, title: safeLabel })}>
+                      <label className="flex items-center gap-4 cursor-pointer flex-1 w-full">
+                        <div className="relative flex items-center justify-center w-8 h-8 shrink-0">
+                          <input type="checkbox" checked={isDone} onChange={() => toggleHabit(dateStr, habit.id)} className="peer sr-only" />
+                          <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all duration-300 active:scale-75 ${isDone ? 'bg-emerald-500 border-emerald-500' : 'border-slate-500'}`}>
+                            {isDone && <Check className="w-4 h-4 text-white" />}
+                          </div>
+                        </div>
+                        <span className={`text-base font-medium ${isDone ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{safeLabel}</span>
+                      </label>
+                    </SwipeableItem>
+                  );
+              })}
+            </div>
           </div>
         </div>
-        <div className={`relative z-10 p-4 rounded-xl border ${isPortfolioPositive ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-red-500/10 border-red-500/20'}`}>
-          <p className={`text-[10px] font-bold uppercase mb-1 ${isPortfolioPositive ? 'text-emerald-400/80' : 'text-red-400/80'}`}>Diferença</p>
-          <p className={`text-xl font-bold font-mono ${isPortfolioPositive ? 'text-emerald-400' : 'text-red-400'}`}>{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', signDisplay: 'always' }).format(portfolioDifference)}</p>
+      );
+    } catch (error) {
+      return <div className="p-4 bg-red-900/50 text-red-200 rounded-xl">Erro Rotina: {error.message}</div>;
+    }
+  };
+
+  const renderPortfolio = () => {
+    try {
+      return (
+        <div className="space-y-6 animate-in fade-in pb-6">
+          <header className="flex justify-between items-start mb-6">
+            <div>
+              <h1 className="text-2xl font-bold text-slate-100">Ativos</h1>
+              <p className="text-slate-400">Distribuição do seu património.</p>
+            </div>
+            <button onClick={() => { hapticFeedback(30); setIsEditingPortfolioCats(!isEditingPortfolioCats); }} className={`p-2 rounded-full transition-colors active:scale-95 ${isEditingPortfolioCats ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'bg-slate-800 text-slate-400 hover:text-slate-200'}`}>
+              <Edit2 className="w-5 h-5" />
+            </button>
+          </header>
+
+          {isEditingPortfolioCats ? (
+            <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 space-y-2 animate-in fade-in shadow-lg">
+              <div className="max-h-64 overflow-y-auto space-y-2 pr-1 hide-scrollbar">
+                {portfolioCategories.map(cat => {
+                    if(!cat || !cat.id) return null;
+                    const safeLabel = cat.label || 'Ativo';
+                    return (
+                    <SwipeableItem key={cat.id} wrapperClass="mb-0" frontClass="p-3 bg-slate-900 border-slate-700 flex justify-between items-center" onEdit={() => setEditPrompt({ type: 'portfolioCat', id: cat.id, label: safeLabel })} onDeleteRequest={() => setDeletePrompt({ type: 'portfolioCat', id: cat.id, title: safeLabel })}>
+                      <span className="text-slate-200 truncate pr-2 font-medium w-full">{safeLabel}</span>
+                    </SwipeableItem>
+                    );
+                })}
+              </div>
+              <div className="flex gap-2 mt-2 pt-4 border-t border-slate-700/50">
+                <input type="text" value={newPortfolioCatLabel} onChange={e => setNewPortfolioCatLabel(e.target.value)} className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white" placeholder="Novo ativo..." />
+                <button type="button" onClick={handleAddPortfolioCategory} className="bg-blue-600 text-white px-4 rounded-lg text-sm font-medium">Adicionar</button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {portfolioCategories.map(cat => {
+                  if(!cat || !cat.id) return null;
+                  const catValueNum = parseCurrencyToNumber(safePortfolio[cat.id]);
+                  const percent = currentPortfolioTotal > 0 ? ((catValueNum / currentPortfolioTotal) * 100).toFixed(1) : 0;
+                  const safeLabel = cat.label || 'Ativo';
+                  
+                  return (
+                    <div key={cat.id} className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm focus-within:border-blue-500/50 transition-all flex flex-col gap-3">
+                      <div className="flex justify-between items-center">
+                        <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">{safeLabel}</label>
+                        <span className="text-[10px] font-bold px-2 py-1 bg-slate-900 text-blue-400 rounded-md border border-slate-700">
+                          {percent}% da carteira
+                        </span>
+                      </div>
+                      
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-medium text-sm">R$</span>
+                        <input type="text" inputMode="numeric" placeholder="0,00" value={safePortfolio[cat.id] || ''} onChange={e => handlePortfolioChange(cat.id, e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg py-3 pl-9 pr-3 text-white font-mono focus:outline-none transition-colors text-base tracking-tighter shadow-inner" />
+                      </div>
+                      <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
+                        <div className="bg-blue-500 h-1.5 rounded-full" style={{ width: `${percent}%` }}></div>
+                      </div>
+                    </div>
+                  );
+              })}
+            </div>
+          )}
+          
+          <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm flex items-center justify-between">
+            <label className="text-sm font-semibold text-slate-300">Data Base</label>
+            <input type="date" value={portfolioUpdateDate} onChange={e => setPortfolioUpdateDate(e.target.value)} className="bg-slate-900 border border-slate-700 rounded-lg p-2 text-white font-medium text-sm color-scheme-dark" />
+          </div>
+
+          <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700 shadow-lg mt-8 relative overflow-hidden">
+            <div className={`absolute top-0 right-0 -mr-10 -mt-10 w-40 h-40 rounded-full blur-3xl pointer-events-none transition-colors duration-500 ${isPortfolioPositive ? 'bg-emerald-500/10' : 'bg-red-500/10'}`}></div>
+            <h3 className="text-lg font-bold text-white mb-5 flex items-center gap-2 relative z-10"><Activity className="w-5 h-5 text-blue-400"/> Evolução</h3>
+            <div className="grid grid-cols-2 gap-3 mb-4 relative z-10">
+              <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-700/50">
+                <p className="text-slate-400 text-[10px] font-bold uppercase mb-1.5">Saldo Anterior</p>
+                <div className="relative">
+                  <span className="absolute left-0 top-1/2 -translate-y-1/2 text-slate-500 text-[13px]">R$</span>
+                  <input type="text" inputMode="numeric" placeholder="0,00" value={prevPortfolioBalance} onChange={e => handlePrevBalanceChange(e.target.value)} className="w-full bg-transparent pl-[1.35rem] pr-1 text-white font-mono focus:outline-none text-[14px]" />
+                </div>
+              </div>
+              <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-700/50">
+                <p className="text-slate-400 text-[10px] font-bold uppercase mb-1.5">Saldo Atual</p>
+                <p className="text-[14px] font-mono text-white pt-0.5">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(currentPortfolioTotal)}</p>
+              </div>
+            </div>
+            <div className={`relative z-10 p-4 rounded-xl border ${isPortfolioPositive ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-red-500/10 border-red-500/20'}`}>
+              <p className={`text-[10px] font-bold uppercase mb-1 ${isPortfolioPositive ? 'text-emerald-400/80' : 'text-red-400/80'}`}>Diferença</p>
+              <p className={`text-xl font-bold font-mono ${isPortfolioPositive ? 'text-emerald-400' : 'text-red-400'}`}>{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', signDisplay: 'always' }).format(portfolioDifference)}</p>
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
-  );
+      );
+    } catch (error) {
+      return <div className="p-4 bg-red-900/50 text-red-200 rounded-xl">Erro Ativos: {error.message}</div>;
+    }
+  };
 
   return (
     <div className="flex justify-center bg-slate-900 font-sans text-slate-200 selection:bg-blue-500/30 h-[100dvh] w-full overflow-hidden">
@@ -1184,12 +1086,12 @@ export default function App() {
           </button>
         </div>
 
-        {/* ÁREA CENTRAL C/ BOUNDARY INDIVIDUAL */}
+        {/* ÁREA CENTRAL */}
         <main className="flex-1 overflow-y-auto p-6 scroll-smooth">
-          {activeTab === 'dashboard' && <TabErrorBoundary storageKeys={['planner_v3_tasks', 'planner_v3_portfolio']}>{renderDashboard()}</TabErrorBoundary>}
-          {activeTab === 'tasks' && <TabErrorBoundary storageKeys={['planner_v3_tasks', 'planner_v3_categories']}>{renderTasks()}</TabErrorBoundary>}
-          {activeTab === 'routine' && <TabErrorBoundary storageKeys={['planner_v3_habits', 'planner_v3_habitsList', 'planner_v3_dailyTasks']}>{renderRoutine()}</TabErrorBoundary>}
-          {activeTab === 'portfolio' && <TabErrorBoundary storageKeys={['planner_v3_portfolio', 'planner_v3_portfolioCats']}>{renderPortfolio()}</TabErrorBoundary>}
+          {activeTab === 'dashboard' && renderDashboard()}
+          {activeTab === 'tasks' && renderTasks()}
+          {activeTab === 'routine' && renderRoutine()}
+          {activeTab === 'portfolio' && renderPortfolio()}
         </main>
 
         {/* BOTTOM NAV */}
@@ -1245,7 +1147,7 @@ export default function App() {
               </div>
 
               <div className="p-4 border-t border-slate-800">
-                <p className="text-center text-[10px] text-slate-500 mt-4 uppercase tracking-widest">Planner Full v2.3 (Clean Start)</p>
+                <p className="text-center text-[10px] text-slate-500 mt-4 uppercase tracking-widest">Planner Full v2.3.1 (Imortal)</p>
               </div>
             </div>
           </div>
