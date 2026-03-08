@@ -203,7 +203,7 @@ const SwipeableItem = ({ onEdit, onDeleteRequest, children, frontClass = "bg-sla
   );
 };
 
-// ESCUDO ANTI-CRASH (Evita a "Tela Azul" de espalhar-se por toda a App)
+// ESCUDO ANTI-CRASH
 class TabErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -217,21 +217,13 @@ class TabErrorBoundary extends React.Component {
       return (
         <div className="p-6 bg-red-900/20 border border-red-500/50 rounded-2xl text-center mt-10 animate-in fade-in">
           <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-          <h2 className="text-red-400 font-black text-xl mb-2">Ops! Dados Corrompidos</h2>
-          <p className="text-sm text-slate-300 mb-4">Um item muito antigo ou com formato inválido causou um erro apenas nesta aba.</p>
-          <div className="p-3 bg-black/50 rounded-lg text-xs text-red-300 font-mono text-left overflow-auto mb-6 max-h-32">
-            {this.state.errorMsg}
-          </div>
+          <h2 className="text-red-400 font-black text-xl mb-2">Ops! Erro na Aba</h2>
+          <p className="text-sm text-slate-300 mb-4">Ocorreu um erro interno de renderização.</p>
           <button 
-            onClick={() => {
-              if(this.props.storageKeys) {
-                this.props.storageKeys.forEach(k => window.localStorage.removeItem(k));
-              }
-              window.location.reload();
-            }}
+            onClick={() => window.location.reload()}
             className="w-full bg-red-600 hover:bg-red-500 text-white py-3 rounded-xl font-bold shadow-lg shadow-red-600/30"
           >
-            Limpar Memória desta Aba e Restaurar
+            Recarregar Página
           </button>
         </div>
       );
@@ -279,16 +271,18 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // --- ESTADOS COM ARMADURA ANTI-CRASH PROFUNDA (.filter para limpar lixo da memória) ---
-  const [tasksRaw, setTasks] = useLocalStorage('planner_tasks', []);
-  const [taskCategoriesRaw, setTaskCategories] = useLocalStorage('planner_taskCategories', INITIAL_CATEGORIES);
-  const [habitsListRaw, setHabitsList] = useLocalStorage('planner_habitsList', INITIAL_HABITS_LIST);
-  const [habits, setHabits] = useLocalStorage('planner_habits', {});
-  const [dailyTasks, setDailyTasks] = useLocalStorage('planner_dailyTasks', {}); 
-  const [portfolioCategoriesRaw, setPortfolioCategories] = useLocalStorage('planner_portfolioCats', INITIAL_PORTFOLIO_CATEGORIES);
-  const [portfolioUpdateDate, setPortfolioUpdateDate] = useLocalStorage('planner_portfolioDate', new Date().toISOString().split('T')[0]);
-  const [prevPortfolioBalance, setPrevPortfolioBalance] = useLocalStorage('planner_prevBalance', '');
-  const [portfolio, setPortfolio] = useLocalStorage('planner_portfolio', {});
+  // =======================================================================
+  // CLEAN START: NOVAS "GAVETAS" (v3) PARA LIMPAR QUALQUER CORRUPÇÃO ANTIGA
+  // =======================================================================
+  const [tasksRaw, setTasks] = useLocalStorage('planner_v3_tasks', []);
+  const [taskCategoriesRaw, setTaskCategories] = useLocalStorage('planner_v3_categories', INITIAL_CATEGORIES);
+  const [habitsListRaw, setHabitsList] = useLocalStorage('planner_v3_habitsList', INITIAL_HABITS_LIST);
+  const [habits, setHabits] = useLocalStorage('planner_v3_habits', {});
+  const [dailyTasks, setDailyTasks] = useLocalStorage('planner_v3_dailyTasks', {}); 
+  const [portfolioCategoriesRaw, setPortfolioCategories] = useLocalStorage('planner_v3_portfolioCats', INITIAL_PORTFOLIO_CATEGORIES);
+  const [portfolioUpdateDate, setPortfolioUpdateDate] = useLocalStorage('planner_v3_portfolioDate', new Date().toISOString().split('T')[0]);
+  const [prevPortfolioBalance, setPrevPortfolioBalance] = useLocalStorage('planner_v3_prevBalance', '');
+  const [portfolio, setPortfolio] = useLocalStorage('planner_v3_portfolio', {});
 
   // Garantia Absoluta que os Arrays só contêm Objetos Válidos com IDs
   const tasks = (Array.isArray(tasksRaw) ? tasksRaw : []).filter(t => t && typeof t === 'object' && t.id);
@@ -316,12 +310,13 @@ export default function App() {
   const [deletePrompt, setDeletePrompt] = useState(null); 
   const [editPrompt, setEditPrompt] = useState(null); 
 
-  // --- SINCRONIZAÇÃO NUVEM ---
+  // --- SINCRONIZAÇÃO NUVEM COM NOVO DOCUMENTO (v3_main) ---
   const loadDataFromCloud = async (user) => {
     if (!dbRef.current || !user) return;
     setSyncStatus('syncing');
     try {
-      const docPath = doc(dbRef.current, 'artifacts', getAppId(), 'users', user.uid, 'plannerData', 'main');
+      // Documento novo na nuvem para não cruzar com os dados antigos
+      const docPath = doc(dbRef.current, 'artifacts', getAppId(), 'users', user.uid, 'plannerData', 'v3_main');
       const snapshot = await getDoc(docPath);
       if (snapshot.exists()) {
         const d = snapshot.data();
@@ -345,7 +340,7 @@ export default function App() {
     syncTimeoutRef.current = setTimeout(async () => {
       setSyncStatus('syncing');
       try {
-        const docPath = doc(dbRef.current, 'artifacts', getAppId(), 'users', firebaseUser.uid, 'plannerData', 'main');
+        const docPath = doc(dbRef.current, 'artifacts', getAppId(), 'users', firebaseUser.uid, 'plannerData', 'v3_main');
         await setDoc(docPath, {
           tasks, taskCategories, habitsList, habits, dailyTasks, portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance, lastUpdated: new Date().toISOString()
         }, { merge: true });
@@ -1191,10 +1186,10 @@ export default function App() {
 
         {/* ÁREA CENTRAL C/ BOUNDARY INDIVIDUAL */}
         <main className="flex-1 overflow-y-auto p-6 scroll-smooth">
-          {activeTab === 'dashboard' && <TabErrorBoundary storageKeys={['planner_tasks', 'planner_portfolio']}>{renderDashboard()}</TabErrorBoundary>}
-          {activeTab === 'tasks' && <TabErrorBoundary storageKeys={['planner_tasks', 'planner_taskCategories']}>{renderTasks()}</TabErrorBoundary>}
-          {activeTab === 'routine' && <TabErrorBoundary storageKeys={['planner_habits', 'planner_habitsList', 'planner_dailyTasks']}>{renderRoutine()}</TabErrorBoundary>}
-          {activeTab === 'portfolio' && <TabErrorBoundary storageKeys={['planner_portfolio', 'planner_portfolioCats']}>{renderPortfolio()}</TabErrorBoundary>}
+          {activeTab === 'dashboard' && <TabErrorBoundary storageKeys={['planner_v3_tasks', 'planner_v3_portfolio']}>{renderDashboard()}</TabErrorBoundary>}
+          {activeTab === 'tasks' && <TabErrorBoundary storageKeys={['planner_v3_tasks', 'planner_v3_categories']}>{renderTasks()}</TabErrorBoundary>}
+          {activeTab === 'routine' && <TabErrorBoundary storageKeys={['planner_v3_habits', 'planner_v3_habitsList', 'planner_v3_dailyTasks']}>{renderRoutine()}</TabErrorBoundary>}
+          {activeTab === 'portfolio' && <TabErrorBoundary storageKeys={['planner_v3_portfolio', 'planner_v3_portfolioCats']}>{renderPortfolio()}</TabErrorBoundary>}
         </main>
 
         {/* BOTTOM NAV */}
@@ -1250,7 +1245,7 @@ export default function App() {
               </div>
 
               <div className="p-4 border-t border-slate-800">
-                <p className="text-center text-[10px] text-slate-500 mt-4 uppercase tracking-widest">Planner Full v2.2.5</p>
+                <p className="text-center text-[10px] text-slate-500 mt-4 uppercase tracking-widest">Planner Full v2.3 (Clean Start)</p>
               </div>
             </div>
           </div>
