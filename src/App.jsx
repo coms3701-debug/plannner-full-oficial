@@ -10,15 +10,13 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc } from 'firebase/firestore';
 
-// --- UTILITÁRIOS NATIVOS E BLINDADOS (Try/Catch evita travamentos no teste) ---
+// --- UTILITÁRIOS NATIVOS E BLINDADOS ---
 const hapticFeedback = (pattern = 40) => {
   try {
     if (typeof window !== 'undefined' && window.navigator && typeof window.navigator.vibrate === 'function') {
       window.navigator.vibrate(pattern);
     }
-  } catch (e) {
-    // Ignora silenciosamente se o ambiente de teste bloquear a vibração
-  }
+  } catch (e) {}
 };
 
 const playBeep = () => {
@@ -33,9 +31,7 @@ const playBeep = () => {
     gainNode.connect(ctx.destination);
     osc.start();
     osc.stop(ctx.currentTime + 0.3);
-  } catch (e) {
-    // Ignora se não houver permissão de som
-  }
+  } catch (e) {}
 };
 
 const requestNotificationPermission = () => {
@@ -57,7 +53,6 @@ const sendNativeNotification = (title, body) => {
   } catch (e) {}
 };
 
-// Formatação segura de datas 
 const parseLocalDate = (dateStr) => {
   try {
     if (!dateStr || typeof dateStr !== 'string') return new Date(0);
@@ -97,7 +92,7 @@ function useLocalStorage(key, initialValue) {
   return [storedValue, setValue];
 }
 
-// --- CONSTANTES DE INÍCIO ---
+// --- CONSTANTES ---
 const INITIAL_HABITS_LIST = [
   { id: 'estudo', label: 'Estudo/conhecimento' },
   { id: 'reserva', label: 'Reserva de emergência' },
@@ -208,8 +203,9 @@ export default function App() {
   const dbRef = useRef(null);
   const syncTimeoutRef = useRef(null);
 
+  // CORREÇÃO MÁGICA: Aponta para a nuvem certa do histórico
   const getAppId = () => {
-    const rawId = typeof __app_id !== 'undefined' ? __app_id : 'planner-v22';
+    const rawId = typeof __app_id !== 'undefined' ? __app_id : 'default-app';
     return rawId.replace(/\//g, '_'); 
   };
 
@@ -237,18 +233,18 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // --- ESTADOS (Com Validação Arrays para evitar Crashs) ---
-  const [tasksRaw, setTasks] = useLocalStorage('p22_tasks', []);
-  const [taskCategoriesRaw, setTaskCategories] = useLocalStorage('p22_taskCategories', INITIAL_CATEGORIES);
-  const [habitsListRaw, setHabitsList] = useLocalStorage('p22_habitsList', INITIAL_HABITS_LIST);
-  const [habits, setHabits] = useLocalStorage('p22_habits', {});
-  const [dailyTasks, setDailyTasks] = useLocalStorage('p22_dailyTasks', {}); 
-  const [portfolioCategoriesRaw, setPortfolioCategories] = useLocalStorage('p22_portfolioCats', INITIAL_PORTFOLIO_CATEGORIES);
-  const [portfolioUpdateDate, setPortfolioUpdateDate] = useLocalStorage('p22_portfolioDate', new Date().toISOString().split('T')[0]);
-  const [prevPortfolioBalance, setPrevPortfolioBalance] = useLocalStorage('p22_prevBalance', '');
-  const [portfolio, setPortfolio] = useLocalStorage('p22_portfolio', {});
+  // --- ESTADOS (CORREÇÃO MÁGICA: Puxa as chaves originais 'planner_...') ---
+  const [tasksRaw, setTasks] = useLocalStorage('planner_tasks', []);
+  const [taskCategoriesRaw, setTaskCategories] = useLocalStorage('planner_taskCategories', INITIAL_CATEGORIES);
+  const [habitsListRaw, setHabitsList] = useLocalStorage('planner_habitsList', INITIAL_HABITS_LIST);
+  const [habits, setHabits] = useLocalStorage('planner_habits', {});
+  const [dailyTasks, setDailyTasks] = useLocalStorage('planner_dailyTasks', {}); 
+  const [portfolioCategoriesRaw, setPortfolioCategories] = useLocalStorage('planner_portfolioCats', INITIAL_PORTFOLIO_CATEGORIES);
+  const [portfolioUpdateDate, setPortfolioUpdateDate] = useLocalStorage('planner_portfolioDate', new Date().toISOString().split('T')[0]);
+  const [prevPortfolioBalance, setPrevPortfolioBalance] = useLocalStorage('planner_prevBalance', '');
+  const [portfolio, setPortfolio] = useLocalStorage('planner_portfolio', {});
 
-  // Garantia de Arrays (Evita Erros fatais)
+  // Garantia de Arrays para evitar crash
   const tasks = Array.isArray(tasksRaw) ? tasksRaw : [];
   const taskCategories = Array.isArray(taskCategoriesRaw) ? taskCategoriesRaw : INITIAL_CATEGORIES;
   const habitsList = Array.isArray(habitsListRaw) ? habitsListRaw : INITIAL_HABITS_LIST;
@@ -330,7 +326,6 @@ export default function App() {
       tag.content = content;
     });
 
-    // Força App no Android e limpa ícone Chrome
     const manifest = {
       name: "Planner Full",
       short_name: "Planner Full",
@@ -391,7 +386,6 @@ export default function App() {
     return () => clearInterval(interval);
   }, [tasks]);
 
-
   // --- DATAS E ORDENAÇÃO SEGURAS ---
   const todayObj = new Date(); 
   todayObj.setHours(0, 0, 0, 0);
@@ -404,8 +398,8 @@ export default function App() {
     
     if (diffTime < 0) return 'overdue';
     if (diffTime === 0) return 'today';
-    if (diffTime <= 3) return 'upcoming-urgent'; // Volta do Amarelo
-    if (diffTime <= 7) return 'upcoming';       // Volta do Verde
+    if (diffTime <= 3) return 'upcoming-urgent'; 
+    if (diffTime <= 7) return 'upcoming';      
     return 'normal';
   };
 
@@ -423,13 +417,12 @@ export default function App() {
 
   const sortedTasksGlobally = useMemo(() => {
     return [...tasks].sort((a, b) => {
-      if (a.completed !== b.completed) return a.completed ? 1 : -1; // Concluídas sempre no fim
+      if (a.completed !== b.completed) return a.completed ? 1 : -1;
       if (a.order !== undefined && b.order !== undefined && a.order !== b.order) return a.order - b.order;
       return parseLocalDate(a.dueDate) - parseLocalDate(b.dueDate);
     });
   }, [tasks]);
 
-  // Filtros Tela Inicial
   const focusOfDayTasks = sortedTasksGlobally.filter(task => {
     const status = getTaskStatus(task.dueDate, task.completed);
     return status === 'overdue' || status === 'today' || (task.completed && parseLocalDate(task.dueDate).getTime() <= todayObj.getTime());
@@ -648,7 +641,6 @@ export default function App() {
     }
   };
 
-
   // --- ECRÃS DE VISUALIZAÇÃO ---
 
   const renderDashboard = () => (
@@ -678,7 +670,6 @@ export default function App() {
            </div>
         ) : (
           <div className="space-y-2">
-            {/* Metas da Agenda */}
             {focusOfDayTasks.map((task) => {
               const status = getTaskStatus(task.dueDate, task.completed);
               const classStr = getStatusColors(status, status==='overdue');
@@ -712,7 +703,6 @@ export default function App() {
               );
             })}
 
-            {/* Compromissos Rápidos da Aba Foco (Sincronizado) */}
             {dayTasksForDashboard.map(task => (
               <SwipeableItem key={`rt_${task.id}`} onEdit={()=>{}} onDeleteRequest={() => setDeletePrompt({ type: 'dailyTask', id: task.id, title: task.text, dateStr: todayStr })} frontClass="bg-slate-800/80 border-slate-700/80 p-3.5 flex items-center justify-between" wrapperClass="mb-0" isDragDisabled>
                 <label className="flex items-center gap-3 cursor-pointer flex-1 w-full">
@@ -732,7 +722,7 @@ export default function App() {
         )}
       </div>
 
-      {/* PRÓXIMOS DIAS (Cores Restauradas) */}
+      {/* PRÓXIMOS DIAS */}
       <div>
         <h2 className="text-sm font-bold uppercase tracking-widest text-slate-400 mb-4 px-1 flex items-center gap-2">
           <CalendarClock className="w-4 h-4" /> Próximos Dias
