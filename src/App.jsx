@@ -53,10 +53,12 @@ const sendNativeNotification = (title, body) => {
   } catch (e) {}
 };
 
+// FORMATAÇÃO SEGURA DE DATAS (ANTI-CRASH)
 const parseLocalDate = (dateStr) => {
   try {
     if (!dateStr || typeof dateStr !== 'string') return new Date(0);
     const [y, m, d] = dateStr.split('-');
+    if (!y || !m || !d) return new Date(0);
     return new Date(y, m - 1, d);
   } catch (e) { return new Date(0); }
 };
@@ -232,7 +234,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // --- ESTADOS COM ARMADURA ANTI-CRASH (.filter(Boolean) remove dados nulos) ---
+  // --- ESTADOS COM ARMADURA ANTI-CRASH PROFUNDA (.filter para limpar lixo da memória) ---
   const [tasksRaw, setTasks] = useLocalStorage('planner_tasks', []);
   const [taskCategoriesRaw, setTaskCategories] = useLocalStorage('planner_taskCategories', INITIAL_CATEGORIES);
   const [habitsListRaw, setHabitsList] = useLocalStorage('planner_habitsList', INITIAL_HABITS_LIST);
@@ -243,13 +245,13 @@ export default function App() {
   const [prevPortfolioBalance, setPrevPortfolioBalance] = useLocalStorage('planner_prevBalance', '');
   const [portfolio, setPortfolio] = useLocalStorage('planner_portfolio', {});
 
-  // Garantia de Arrays perfeitamente limpos
-  const tasks = (Array.isArray(tasksRaw) ? tasksRaw : []).filter(Boolean);
-  const taskCategories = (Array.isArray(taskCategoriesRaw) ? taskCategoriesRaw : INITIAL_CATEGORIES).filter(Boolean);
-  const habitsList = (Array.isArray(habitsListRaw) ? habitsListRaw : INITIAL_HABITS_LIST).filter(Boolean);
-  const portfolioCategories = (Array.isArray(portfolioCategoriesRaw) ? portfolioCategoriesRaw : INITIAL_PORTFOLIO_CATEGORIES).filter(Boolean);
-  const safeHabits = habits || {};
-  const safeDailyTasks = dailyTasks || {};
+  // Garantia Absoluta que os Arrays só contêm Objetos Válidos com IDs
+  const tasks = (Array.isArray(tasksRaw) ? tasksRaw : []).filter(t => t && typeof t === 'object' && t.id);
+  const taskCategories = (Array.isArray(taskCategoriesRaw) ? taskCategoriesRaw : INITIAL_CATEGORIES).filter(c => c && typeof c === 'object' && c.id);
+  const habitsList = (Array.isArray(habitsListRaw) ? habitsListRaw : INITIAL_HABITS_LIST).filter(h => h && typeof h === 'object' && h.id);
+  const portfolioCategories = (Array.isArray(portfolioCategoriesRaw) ? portfolioCategoriesRaw : INITIAL_PORTFOLIO_CATEGORIES).filter(c => c && typeof c === 'object' && c.id);
+  const safeHabits = typeof habits === 'object' && habits !== null ? habits : {};
+  const safeDailyTasks = typeof dailyTasks === 'object' && dailyTasks !== null ? dailyTasks : {};
 
   // UI States
   const [isEditingCategories, setIsEditingCategories] = useState(false);
@@ -324,29 +326,6 @@ export default function App() {
       }
       tag.content = content;
     });
-
-    const manifest = {
-      name: "Planner Full",
-      short_name: "Planner Full",
-      display: "standalone",
-      start_url: ".",
-      background_color: "#0f172a",
-      theme_color: "#0f172a",
-      icons: [
-        { src: "/icon.png", sizes: "192x192", type: "image/png" },
-        { src: "/icon.png", sizes: "512x512", type: "image/png" },
-        { src: "/icon.png", sizes: "512x512", type: "image/png", purpose: "any maskable" }
-      ]
-    };
-    
-    const manifestUrl = `data:application/json;base64,${btoa(JSON.stringify(manifest))}`;
-    let manifestTag = document.querySelector('link[rel="manifest"]');
-    if (!manifestTag) {
-      manifestTag = document.createElement('link');
-      manifestTag.rel = 'manifest';
-      document.head.appendChild(manifestTag);
-    }
-    manifestTag.href = manifestUrl;
   }, []);
 
   // --- MOTOR DE LEMBRETES (NOTIFICAÇÕES 1H e 1D antes) ---
@@ -355,7 +334,7 @@ export default function App() {
       const now = new Date();
       let updatedTasks = false;
       const newTasks = tasks.map(task => {
-        if (task.completed || !task.hasReminder || !task.dueDate || !task.dueTime) return task;
+        if (!task || task.completed || !task.hasReminder || !task.dueDate || !task.dueTime) return task;
         
         try {
           const [y, m, d] = task.dueDate.split('-');
@@ -366,12 +345,12 @@ export default function App() {
 
           let t = { ...task };
           if (diffHours <= 24 && diffHours > 23 && !t.notif1d) {
-            sendNativeNotification("Foco do Dia Amanhã", `Meta: ${task.title}`);
+            sendNativeNotification("Foco do Dia Amanhã", `Meta: ${task.title || 'Tarefa'}`);
             t.notif1d = true;
             updatedTasks = true;
           }
           if (diffHours <= 1 && diffHours > 0 && !t.notif1h) {
-            sendNativeNotification("Atenção - Lembrete", `A meta "${task.title}" vence em 1 hora!`);
+            sendNativeNotification("Atenção - Lembrete", `A meta "${task.title || 'Tarefa'}" vence em 1 hora!`);
             t.notif1h = true;
             updatedTasks = true;
           }
@@ -416,24 +395,26 @@ export default function App() {
 
   const sortedTasksGlobally = useMemo(() => {
     return [...tasks].sort((a, b) => {
-      if (a.completed !== b.completed) return a.completed ? 1 : -1;
-      if (a.order !== undefined && b.order !== undefined && a.order !== b.order) return a.order - b.order;
-      return parseLocalDate(a.dueDate) - parseLocalDate(b.dueDate);
+      if (a?.completed !== b?.completed) return a?.completed ? 1 : -1;
+      if (a?.order !== undefined && b?.order !== undefined && a?.order !== b?.order) return a.order - b.order;
+      return parseLocalDate(a?.dueDate) - parseLocalDate(b?.dueDate);
     });
   }, [tasks]);
 
   const focusOfDayTasks = sortedTasksGlobally.filter(task => {
+    if (!task) return false;
     const status = getTaskStatus(task.dueDate, task.completed);
     return status === 'overdue' || status === 'today' || (task.completed && parseLocalDate(task.dueDate).getTime() <= todayObj.getTime());
   });
 
   const upcomingTasks = sortedTasksGlobally.filter(task => {
+    if (!task) return false;
     const status = getTaskStatus(task.dueDate, task.completed);
     return status === 'upcoming-urgent' || status === 'upcoming' || status === 'normal';
   });
 
   const dayTasksForDashboard = Array.isArray(safeDailyTasks[todayStr]) ? safeDailyTasks[todayStr] : [];
-  const hasUrgentTasks = focusOfDayTasks.some(t => !t.completed) || dayTasksForDashboard.some(t => !t.completed);
+  const hasUrgentTasks = focusOfDayTasks.some(t => t && !t.completed) || dayTasksForDashboard.some(t => t && !t.completed);
 
   // --- DRAG AND DROP ---
   const draggingId = useRef(null);
@@ -458,14 +439,14 @@ export default function App() {
       
       setTasks(prev => {
         const arr = [...prev];
-        const idx1 = arr.findIndex(t => t.id === draggingId.current);
-        const idx2 = arr.findIndex(t => t.id === targetId);
+        const idx1 = arr.findIndex(t => t && t.id === draggingId.current);
+        const idx2 = arr.findIndex(t => t && t.id === targetId);
         
         if (idx1 >= 0 && idx2 >= 0) {
           const temp = arr[idx1];
           arr.splice(idx1, 1);
           arr.splice(idx2, 0, temp);
-          arr.forEach((t, i) => { t.order = i; });
+          arr.forEach((t, i) => { if (t) t.order = i; });
         }
         return arr;
       });
@@ -480,7 +461,7 @@ export default function App() {
   };
 
   // --- CÁLCULOS PATRIMÓNIO ---
-  const currentPortfolioTotal = portfolioCategories.reduce((acc, cat) => acc + parseCurrencyToNumber(portfolio[cat.id]), 0);
+  const currentPortfolioTotal = portfolioCategories.reduce((acc, cat) => acc + parseCurrencyToNumber(portfolio[cat?.id]), 0);
   const portfolioDifference = currentPortfolioTotal - parseCurrencyToNumber(prevPortfolioBalance);
   const isPortfolioPositive = portfolioDifference >= 0;
 
@@ -488,21 +469,24 @@ export default function App() {
   const confirmDelete = () => {
     hapticFeedback([50, 100]); 
     if (!deletePrompt) return;
-    if (deletePrompt.type === 'task') setTasks(tasks.filter(t => t.id !== deletePrompt.id));
-    else if (deletePrompt.type === 'habit') setHabitsList(habitsList.filter(h => h.id !== deletePrompt.id));
-    else if (deletePrompt.type === 'category') setTaskCategories(taskCategories.filter(c => c.id !== deletePrompt.id));
-    else if (deletePrompt.type === 'portfolioCat') setPortfolioCategories(portfolioCategories.filter(c => c.id !== deletePrompt.id));
-    else if (deletePrompt.type === 'dailyTask') setDailyTasks(prev => ({...prev, [deletePrompt.dateStr]: prev[deletePrompt.dateStr].filter(t => t.id !== deletePrompt.id)}));
+    if (deletePrompt.type === 'task') setTasks(tasks.filter(t => t?.id !== deletePrompt.id));
+    else if (deletePrompt.type === 'habit') setHabitsList(habitsList.filter(h => h?.id !== deletePrompt.id));
+    else if (deletePrompt.type === 'category') setTaskCategories(taskCategories.filter(c => c?.id !== deletePrompt.id));
+    else if (deletePrompt.type === 'portfolioCat') setPortfolioCategories(portfolioCategories.filter(c => c?.id !== deletePrompt.id));
+    else if (deletePrompt.type === 'dailyTask') {
+      const currentList = safeDailyTasks[deletePrompt.dateStr] || [];
+      setDailyTasks(prev => ({...prev, [deletePrompt.dateStr]: currentList.filter(t => t?.id !== deletePrompt.id)}));
+    }
     setDeletePrompt(null);
   };
 
   const handleSaveSimpleEdit = (e) => {
     e.preventDefault();
     hapticFeedback(30);
-    if (!editPrompt || !editPrompt.label.trim()) return;
-    if (editPrompt.type === 'habit') setHabitsList(habitsList.map(h => h.id === editPrompt.id ? { ...h, label: editPrompt.label } : h));
-    else if (editPrompt.type === 'category') setTaskCategories(taskCategories.map(c => c.id === editPrompt.id ? { ...c, label: editPrompt.label } : c));
-    else if (editPrompt.type === 'portfolioCat') setPortfolioCategories(portfolioCategories.map(c => c.id === editPrompt.id ? { ...c, label: editPrompt.label } : c));
+    if (!editPrompt || !editPrompt.label?.trim()) return;
+    if (editPrompt.type === 'habit') setHabitsList(habitsList.map(h => h?.id === editPrompt.id ? { ...h, label: editPrompt.label } : h));
+    else if (editPrompt.type === 'category') setTaskCategories(taskCategories.map(c => c?.id === editPrompt.id ? { ...c, label: editPrompt.label } : c));
+    else if (editPrompt.type === 'portfolioCat') setPortfolioCategories(portfolioCategories.map(c => c?.id === editPrompt.id ? { ...c, label: editPrompt.label } : c));
     setEditPrompt(null);
   };
 
@@ -526,16 +510,16 @@ export default function App() {
 
   const toggleTask = (id) => {
     hapticFeedback([50, 30]); 
-    const task = tasks.find(t => t.id === id);
+    const task = tasks.find(t => t?.id === id);
     if (!task) return;
     
     if (!task.completed && task.recurrence && task.recurrence !== 'none') {
        const nextDate = calculateNextDate(task.dueDate, task.recurrence);
        const nextTask = { ...task, id: Date.now(), dueDate: nextDate, completed: false, order: Date.now(), notif1d: false, notif1h: false };
        const updatedCurrent = { ...task, completed: true, recurrence: 'none' };
-       setTasks(prev => prev.map(t => t.id === id ? updatedCurrent : t).concat(nextTask));
+       setTasks(prev => prev.map(t => t?.id === id ? updatedCurrent : t).concat(nextTask));
     } else {
-       setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
+       setTasks(prev => prev.map(t => t?.id === id ? { ...t, completed: !t.completed } : t));
     }
   };
 
@@ -545,7 +529,7 @@ export default function App() {
     requestNotificationPermission(); 
     if (!newTask.title || !newTask.dueDate || !newTask.category) return;
     
-    if (editingTaskId) setTasks(tasks.map(t => t.id === editingTaskId ? { ...t, ...newTask } : t));
+    if (editingTaskId) setTasks(tasks.map(t => t?.id === editingTaskId ? { ...t, ...newTask } : t));
     else setTasks([...tasks, { ...newTask, id: Date.now(), completed: false, order: Date.now(), notif1d: false, notif1h: false }]);
     
     setNewTask({ title: '', category: taskCategories[0]?.id || 'meta', dueDate: '', dueTime: '', hasReminder: false, recurrence: 'none' });
@@ -554,8 +538,9 @@ export default function App() {
   };
 
   const startEditTask = (task) => {
+    if(!task) return;
     hapticFeedback(20);
-    setNewTask({ title: task.title, category: task.category, dueDate: task.dueDate, dueTime: task.dueTime || '', hasReminder: !!task.hasReminder, recurrence: task.recurrence || 'none' });
+    setNewTask({ title: task.title || '', category: task.category || '', dueDate: task.dueDate || '', dueTime: task.dueTime || '', hasReminder: !!task.hasReminder, recurrence: task.recurrence || 'none' });
     setEditingTaskId(task.id);
     setShowAddTask(true);
   };
@@ -572,7 +557,7 @@ export default function App() {
     hapticFeedback(30);
     if (!newCategoryLabel.trim()) return;
     const newId = newCategoryLabel.trim().toLowerCase().replace(/\s+/g, '_');
-    if (!taskCategories.some(c => c.id === newId)) {
+    if (!taskCategories.some(c => c?.id === newId)) {
       setTaskCategories([...taskCategories, { id: newId, label: newCategoryLabel.trim() }]);
     }
     setNewCategoryLabel('');
@@ -609,7 +594,7 @@ export default function App() {
     hapticFeedback([40, 20]);
     setDailyTasks(prev => {
       const dayList = (prev || {})[dateStr] || [];
-      return { ...prev, [dateStr]: dayList.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t) };
+      return { ...prev, [dateStr]: dayList.map(t => t?.id === taskId ? { ...t, completed: !t.completed } : t) };
     });
   };
 
@@ -617,7 +602,7 @@ export default function App() {
     hapticFeedback(30);
     if (!newPortfolioCatLabel.trim()) return;
     const newId = newPortfolioCatLabel.trim().toLowerCase().replace(/\s+/g, '_');
-    if (!portfolioCategories.some(c => c.id === newId)) {
+    if (!portfolioCategories.some(c => c?.id === newId)) {
       setPortfolioCategories([...portfolioCategories, { id: newId, label: newPortfolioCatLabel.trim() }]);
     }
     setNewPortfolioCatLabel('');
@@ -640,6 +625,7 @@ export default function App() {
     }
   };
 
+
   // --- ECRÃS DE VISUALIZAÇÃO ---
 
   const renderDashboard = () => (
@@ -657,7 +643,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* FOCO DO DIA (Sincronizado Agenda + Aba Foco) */}
+      {/* FOCO DO DIA (Sincronizado) */}
       <div>
         <h2 className="text-sm font-bold uppercase tracking-widest text-blue-400 mb-4 px-1 flex items-center gap-2">
           <AlertCircle className="w-4 h-4" /> Foco do Dia
@@ -670,6 +656,7 @@ export default function App() {
         ) : (
           <div className="space-y-2">
             {focusOfDayTasks.map((task) => {
+              if(!task) return null;
               const status = getTaskStatus(task.dueDate, task.completed);
               const classStr = getStatusColors(status, status==='overdue');
 
@@ -682,7 +669,7 @@ export default function App() {
                     
                     <div className="flex-1 min-w-0 pointer-events-none">
                       <h3 className={`font-bold text-sm truncate transition-colors ${task.completed ? 'line-through text-slate-500' : 'text-slate-100'}`}>
-                        {task.title}
+                        {task.title || 'Sem título'}
                       </h3>
                       <div className="flex items-center gap-2 mt-0.5">
                         <span className={`text-[10px] uppercase font-bold tracking-wider opacity-80`}>
@@ -702,21 +689,23 @@ export default function App() {
               );
             })}
 
-            {dayTasksForDashboard.map(task => (
+            {dayTasksForDashboard.map(task => {
+              if(!task) return null;
+              return (
               <SwipeableItem key={`rt_${task.id}`} onEdit={()=>{}} onDeleteRequest={() => setDeletePrompt({ type: 'dailyTask', id: task.id, title: task.text, dateStr: todayStr })} frontClass="bg-slate-800/80 border-slate-700/80 p-3.5 flex items-center justify-between" wrapperClass="mb-0" isDragDisabled>
                 <label className="flex items-center gap-3 cursor-pointer flex-1 w-full">
                   <div className="relative flex items-center justify-center w-6 h-6 shrink-0">
-                    <input type="checkbox" checked={task.completed} onChange={() => toggleDailyTask(todayStr, task.id)} className="peer sr-only"/>
+                    <input type="checkbox" checked={!!task.completed} onChange={() => toggleDailyTask(todayStr, task.id)} className="peer sr-only"/>
                     <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all duration-200 active:scale-75 ${task.completed ? 'bg-blue-500 border-blue-500' : 'border-slate-500'}`}>
                       {task.completed && <Check className="w-3.5 h-3.5 text-white" />}
                     </div>
                   </div>
                   <span className={`text-sm font-medium transition-colors ${task.completed ? 'text-slate-500 line-through' : 'text-slate-200'}`}>
-                    {task.text}
+                    {task.text || 'Compromisso'}
                   </span>
                 </label>
               </SwipeableItem>
-            ))}
+            )})}
           </div>
         )}
       </div>
@@ -729,6 +718,7 @@ export default function App() {
         {upcomingTasks.length > 0 ? (
           <div className="space-y-2 opacity-95">
             {upcomingTasks.map(task => {
+              if(!task) return null;
               const status = getTaskStatus(task.dueDate, task.completed);
               const classStr = getStatusColors(status, false);
 
@@ -738,7 +728,7 @@ export default function App() {
                     {task.completed && <Check className="w-4 h-4 text-white" />}
                   </button>
                   <div className="flex-1 min-w-0 pointer-events-none">
-                    <h3 className={`font-medium text-sm truncate transition-colors`}>{task.title}</h3>
+                    <h3 className={`font-medium text-sm truncate transition-colors`}>{task.title || 'Sem título'}</h3>
                     <p className="text-[11px] opacity-70 font-mono mt-0.5">
                       {formatDateLocal(task.dueDate)} {task.dueTime && `• ${task.dueTime}`}
                     </p>
@@ -807,11 +797,13 @@ export default function App() {
             {isEditingCategories ? (
               <div className="bg-slate-900 border border-slate-700 rounded-xl p-3 space-y-2">
                 <div className="max-h-36 overflow-y-auto space-y-2 pr-1 hide-scrollbar">
-                  {taskCategories.map(cat => (
+                  {taskCategories.map(cat => {
+                    if(!cat) return null;
+                    return (
                     <SwipeableItem key={cat.id} wrapperClass="mb-0" frontClass="p-2.5 bg-slate-800 border-slate-700 flex justify-between items-center" onEdit={() => setEditPrompt({ type: 'category', id: cat.id, label: cat.label })} onDeleteRequest={() => setDeletePrompt({ type: 'category', id: cat.id, title: cat.label })}>
-                      <span className="text-slate-200 truncate pr-2 font-medium w-full">{cat.label}</span>
+                      <span className="text-slate-200 truncate pr-2 font-medium w-full">{cat.label || 'Categoria'}</span>
                     </SwipeableItem>
-                  ))}
+                  )})}
                 </div>
                 <div className="flex gap-2 mt-2 pt-2 border-t border-slate-700/50">
                   <input type="text" value={newCategoryLabel} onChange={e => setNewCategoryLabel(e.target.value)} className="flex-1 bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-sm text-white" placeholder="Nova..." />
@@ -821,11 +813,12 @@ export default function App() {
             ) : (
               <div className="flex gap-3 overflow-x-auto pb-4 hide-scrollbar -mx-2 px-2 snap-x snap-mandatory">
                 {taskCategories.map(cat => {
+                  if(!cat) return null;
                   const isSelected = newTask.category === cat.id;
                   return (
                     <button key={cat.id} type="button" onClick={() => { hapticFeedback(40); setNewTask({...newTask, category: cat.id}); }} className={`relative snap-center shrink-0 px-6 py-3.5 rounded-2xl text-sm font-bold transition-all duration-300 border-2 active:scale-95 ${isSelected ? 'bg-gradient-to-br from-blue-500 to-blue-600 border-blue-400 text-white scale-105' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>
                       {isSelected && <span className="absolute -inset-1 rounded-2xl border border-blue-400/50 animate-pulse pointer-events-none"></span>}
-                      {cat.label}
+                      {cat.label || 'Cat'}
                     </button>
                   );
                 })}
@@ -843,12 +836,14 @@ export default function App() {
 
       <div className="space-y-1">
         {sortedTasksGlobally.map(task => {
+          if (!task) return null; // Previne crash se a tarefa for nula
+          
           const status = getTaskStatus(task.dueDate, task.completed);
           const classStr = getStatusColors(status, status === 'overdue');
           
-          // Armadura Anti-Crash nas categorias
+          // BLINDAGEM DA CATEGORIA
           const categoryObj = taskCategories.find(c => c && c.id === task.category);
-          const categoryLabel = categoryObj ? categoryObj.label : task.category;
+          const categoryLabel = categoryObj?.label || task.category || 'Geral';
           const recurrenceLabels = { daily: 'Diária', weekly: 'Semanal', monthly: 'Mensal', yearly: 'Anual' };
           
           return (
@@ -859,12 +854,12 @@ export default function App() {
               
               <div className="flex-1 min-w-0 pointer-events-none">
                 <div className="flex justify-between items-center">
-                   <h3 className={`font-bold truncate transition-colors`}>{task.title}</h3>
+                   <h3 className={`font-bold truncate transition-colors`}>{task.title || 'Sem título'}</h3>
                    {!task.completed && task.hasReminder && <BellRing className={`w-4 h-4 shrink-0 opacity-80`} />}
                 </div>
                 <p className="text-xs flex items-center gap-2 mt-1 opacity-80">
-                  {categoryLabel && <span className="capitalize">{categoryLabel}</span>}
-                  {categoryLabel && <span>•</span>}
+                  <span className="capitalize">{categoryLabel}</span>
+                  <span>•</span>
                   <span>{formatDateLocal(task.dueDate)} {task.dueTime && `• ${task.dueTime}`}</span>
                   {task.recurrence && task.recurrence !== 'none' && (
                      <>
@@ -887,7 +882,7 @@ export default function App() {
     const dayTasks = Array.isArray(safeDailyTasks[dateStr]) ? safeDailyTasks[dateStr] : [];
 
     const totalItems = habitsList.length + dayTasks.length;
-    const completedItems = habitsList.filter(h => dayHabits[h.id]).length + dayTasks.filter(t => t.completed).length;
+    const completedItems = habitsList.filter(h => h && dayHabits[h.id]).length + dayTasks.filter(t => t && t.completed).length;
     const progressPercent = totalItems === 0 ? 0 : Math.round((completedItems / totalItems) * 100);
 
     return (
@@ -929,19 +924,21 @@ export default function App() {
           </form>
 
           <div className="space-y-2 mt-3">
-            {dayTasks.map(task => (
+            {dayTasks.map(task => {
+              if(!task) return null;
+              return(
               <SwipeableItem key={task.id} frontClass="bg-slate-800/80 border-slate-700/80 p-3.5 flex items-center justify-between" wrapperClass="mb-0" onEdit={()=>{}} onDeleteRequest={() => setDeletePrompt({ type: 'dailyTask', id: task.id, title: task.text, dateStr })}>
                 <label className="flex items-center gap-3 cursor-pointer flex-1 w-full">
                   <div className="relative flex items-center justify-center w-6 h-6 shrink-0">
-                    <input type="checkbox" checked={task.completed} onChange={() => toggleDailyTask(dateStr, task.id)} className="peer sr-only"/>
+                    <input type="checkbox" checked={!!task.completed} onChange={() => toggleDailyTask(dateStr, task.id)} className="peer sr-only"/>
                     <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all duration-200 active:scale-75 ${task.completed ? 'bg-blue-500 border-blue-500' : 'border-slate-500'}`}>
                       {task.completed && <Check className="w-3.5 h-3.5 text-white" />}
                     </div>
                   </div>
-                  <span className={`text-sm font-medium transition-colors ${task.completed ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{task.text}</span>
+                  <span className={`text-sm font-medium transition-colors ${task.completed ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{task.text || 'Compromisso'}</span>
                 </label>
               </SwipeableItem>
-            ))}
+            )})}
           </div>
         </div>
 
@@ -958,6 +955,7 @@ export default function App() {
           )}
           <div className="space-y-2">
             {habitsList.map(habit => {
+              if(!habit) return null;
               const isDone = !!dayHabits[habit.id];
               return (
                 <SwipeableItem key={habit.id} frontClass="bg-slate-800 border-slate-700 p-4 flex items-center justify-between" wrapperClass="mb-0" onEdit={() => setEditPrompt({ type: 'habit', id: habit.id, label: habit.label })} onDeleteRequest={() => setDeletePrompt({ type: 'habit', id: habit.id, title: habit.label })}>
@@ -968,7 +966,7 @@ export default function App() {
                         {isDone && <Check className="w-4 h-4 text-white" />}
                       </div>
                     </div>
-                    <span className={`text-base font-medium ${isDone ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{habit.label}</span>
+                    <span className={`text-base font-medium ${isDone ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{habit.label || 'Hábito'}</span>
                   </label>
                 </SwipeableItem>
               );
@@ -995,11 +993,13 @@ export default function App() {
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 space-y-2 animate-in fade-in shadow-lg">
           <SwipeHint />
           <div className="max-h-64 overflow-y-auto space-y-2 pr-1 hide-scrollbar">
-            {portfolioCategories.map(cat => (
+            {portfolioCategories.map(cat => {
+              if(!cat) return null;
+              return (
               <SwipeableItem key={cat.id} wrapperClass="mb-0" frontClass="p-3 bg-slate-900 border-slate-700 flex justify-between items-center" onEdit={() => setEditPrompt({ type: 'portfolioCat', id: cat.id, label: cat.label })} onDeleteRequest={() => setDeletePrompt({ type: 'portfolioCat', id: cat.id, title: cat.label })}>
-                <span className="text-slate-200 truncate pr-2 font-medium w-full">{cat.label}</span>
+                <span className="text-slate-200 truncate pr-2 font-medium w-full">{cat.label || 'Ativo'}</span>
               </SwipeableItem>
-            ))}
+            )})}
           </div>
           <div className="flex gap-2 mt-2 pt-4 border-t border-slate-700/50">
             <input type="text" value={newPortfolioCatLabel} onChange={e => setNewPortfolioCatLabel(e.target.value)} className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white" placeholder="Novo ativo..." />
@@ -1009,13 +1009,14 @@ export default function App() {
       ) : (
         <div className="space-y-4">
           {portfolioCategories.map(cat => {
+            if(!cat) return null;
             const catValueNum = parseCurrencyToNumber(portfolio[cat.id]);
             const percent = currentPortfolioTotal > 0 ? ((catValueNum / currentPortfolioTotal) * 100).toFixed(1) : 0;
             
             return (
               <div key={cat.id} className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm focus-within:border-blue-500/50 transition-all flex flex-col gap-3">
                 <div className="flex justify-between items-center">
-                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">{cat.label}</label>
+                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">{cat.label || 'Ativo'}</label>
                   <span className="text-[10px] font-bold px-2 py-1 bg-slate-900 text-blue-400 rounded-md border border-slate-700">
                     {percent}% da carteira
                   </span>
@@ -1143,7 +1144,7 @@ export default function App() {
               </div>
 
               <div className="p-4 border-t border-slate-800">
-                <p className="text-center text-[10px] text-slate-500 mt-4 uppercase tracking-widest">Planner Full v2.2</p>
+                <p className="text-center text-[10px] text-slate-500 mt-4 uppercase tracking-widest">Planner Full v2.2.1</p>
               </div>
             </div>
           </div>
