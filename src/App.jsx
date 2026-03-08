@@ -203,7 +203,6 @@ export default function App() {
   const dbRef = useRef(null);
   const syncTimeoutRef = useRef(null);
 
-  // CORREÇÃO MÁGICA: Aponta para a nuvem certa do histórico
   const getAppId = () => {
     const rawId = typeof __app_id !== 'undefined' ? __app_id : 'default-app';
     return rawId.replace(/\//g, '_'); 
@@ -233,7 +232,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // --- ESTADOS (CORREÇÃO MÁGICA: Puxa as chaves originais 'planner_...') ---
+  // --- ESTADOS COM ARMADURA ANTI-CRASH (.filter(Boolean) remove dados nulos) ---
   const [tasksRaw, setTasks] = useLocalStorage('planner_tasks', []);
   const [taskCategoriesRaw, setTaskCategories] = useLocalStorage('planner_taskCategories', INITIAL_CATEGORIES);
   const [habitsListRaw, setHabitsList] = useLocalStorage('planner_habitsList', INITIAL_HABITS_LIST);
@@ -244,11 +243,11 @@ export default function App() {
   const [prevPortfolioBalance, setPrevPortfolioBalance] = useLocalStorage('planner_prevBalance', '');
   const [portfolio, setPortfolio] = useLocalStorage('planner_portfolio', {});
 
-  // Garantia de Arrays para evitar crash
-  const tasks = Array.isArray(tasksRaw) ? tasksRaw : [];
-  const taskCategories = Array.isArray(taskCategoriesRaw) ? taskCategoriesRaw : INITIAL_CATEGORIES;
-  const habitsList = Array.isArray(habitsListRaw) ? habitsListRaw : INITIAL_HABITS_LIST;
-  const portfolioCategories = Array.isArray(portfolioCategoriesRaw) ? portfolioCategoriesRaw : INITIAL_PORTFOLIO_CATEGORIES;
+  // Garantia de Arrays perfeitamente limpos
+  const tasks = (Array.isArray(tasksRaw) ? tasksRaw : []).filter(Boolean);
+  const taskCategories = (Array.isArray(taskCategoriesRaw) ? taskCategoriesRaw : INITIAL_CATEGORIES).filter(Boolean);
+  const habitsList = (Array.isArray(habitsListRaw) ? habitsListRaw : INITIAL_HABITS_LIST).filter(Boolean);
+  const portfolioCategories = (Array.isArray(portfolioCategoriesRaw) ? portfolioCategoriesRaw : INITIAL_PORTFOLIO_CATEGORIES).filter(Boolean);
   const safeHabits = habits || {};
   const safeDailyTasks = dailyTasks || {};
 
@@ -847,6 +846,11 @@ export default function App() {
           const status = getTaskStatus(task.dueDate, task.completed);
           const classStr = getStatusColors(status, status === 'overdue');
           
+          // Armadura Anti-Crash nas categorias
+          const categoryObj = taskCategories.find(c => c && c.id === task.category);
+          const categoryLabel = categoryObj ? categoryObj.label : task.category;
+          const recurrenceLabels = { daily: 'Diária', weekly: 'Semanal', monthly: 'Mensal', yearly: 'Anual' };
+          
           return (
             <SwipeableItem key={task.id} onEdit={() => startEditTask(task)} onDeleteRequest={() => setDeletePrompt({ type: 'task', id: task.id, title: task.title })} frontClass={`${classStr} p-4 flex items-center gap-4`}>
               <button onClick={() => toggleTask(task.id)} className={`w-6 h-6 rounded-md border flex items-center justify-center shrink-0 active:scale-75 ${task.completed ? 'bg-blue-600 border-blue-600' : 'border-slate-500'}`}>
@@ -859,9 +863,15 @@ export default function App() {
                    {!task.completed && task.hasReminder && <BellRing className={`w-4 h-4 shrink-0 opacity-80`} />}
                 </div>
                 <p className="text-xs flex items-center gap-2 mt-1 opacity-80">
-                  <span className="capitalize">{(taskCategories.find(c => c.id === task.category) || {}).label || task.category}</span>
-                  <span>•</span>
+                  {categoryLabel && <span className="capitalize">{categoryLabel}</span>}
+                  {categoryLabel && <span>•</span>}
                   <span>{formatDateLocal(task.dueDate)} {task.dueTime && `• ${task.dueTime}`}</span>
+                  {task.recurrence && task.recurrence !== 'none' && (
+                     <>
+                       <span>•</span>
+                       <span className="text-blue-400 flex items-center gap-1">🔁 {recurrenceLabels[task.recurrence]}</span>
+                     </>
+                  )}
                 </p>
               </div>
             </SwipeableItem>
