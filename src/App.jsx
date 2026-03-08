@@ -632,7 +632,6 @@ export default function App() {
     }
   };
 
-
   // --- ECRÃS DE VISUALIZAÇÃO ---
 
   const renderDashboard = () => (
@@ -663,58 +662,62 @@ export default function App() {
         ) : (
           <div className="space-y-2">
             {focusOfDayTasks.map((task) => {
-              if(!task || typeof task !== 'object') return null;
-              const status = getTaskStatus(task.dueDate, task.completed);
-              const classStr = getStatusColors(status, status==='overdue');
-              const safeTitle = typeof task.title === 'string' ? task.title : 'Sem Título';
+              try {
+                if(!task || typeof task !== 'object') return null;
+                const status = getTaskStatus(task.dueDate, task.completed);
+                const classStr = getStatusColors(status, status==='overdue');
+                const safeTitle = typeof task.title === 'string' ? task.title : 'Sem Título';
 
-              return (
-                <div key={task.id} data-drag-id={task.id} className="transition-transform duration-200 ease-in-out">
-                  <SwipeableItem onEdit={() => startEditTask(task)} onDeleteRequest={() => setDeletePrompt({ type: 'task', id: task.id, title: safeTitle })} frontClass={`${classStr} p-4 flex items-center gap-3`} wrapperClass="mb-0">
-                    <button onClick={() => toggleTask(task.id)} className={`w-6 h-6 rounded-md border flex items-center justify-center transition-all duration-300 shrink-0 active:scale-75 ${task.completed ? 'bg-blue-600 border-blue-600 shadow-[0_0_10px_rgba(59,130,246,0.5)]' : 'border-slate-500'}`}>
-                      {task.completed && <Check className="w-4 h-4 text-white" />}
-                    </button>
-                    
-                    <div className="flex-1 min-w-0 pointer-events-none">
-                      <h3 className={`font-bold text-sm truncate transition-colors ${task.completed ? 'line-through text-slate-500' : 'text-slate-100'}`}>
-                        {safeTitle}
-                      </h3>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className={`text-[10px] uppercase font-bold tracking-wider opacity-80`}>
-                          {status === 'overdue' ? 'Atrasada' : 'Hoje'} {typeof task.dueTime === 'string' && task.dueTime ? `• ${task.dueTime}` : ''}
-                        </span>
-                        {task.hasReminder && !task.completed && <BellRing className={`w-3 h-3 ${status==='overdue' ? 'animate-pulse' : ''}`} />}
+                return (
+                  <div key={task.id || Math.random()} data-drag-id={task.id} className="transition-transform duration-200 ease-in-out">
+                    <SwipeableItem onEdit={() => startEditTask(task)} onDeleteRequest={() => setDeletePrompt({ type: 'task', id: task.id, title: safeTitle })} frontClass={`${classStr} p-4 flex items-center gap-3`} wrapperClass="mb-0">
+                      <button onClick={() => toggleTask(task.id)} className={`w-6 h-6 rounded-md border flex items-center justify-center transition-all duration-300 shrink-0 active:scale-75 ${task.completed ? 'bg-blue-600 border-blue-600 shadow-[0_0_10px_rgba(59,130,246,0.5)]' : 'border-slate-500'}`}>
+                        {task.completed && <Check className="w-4 h-4 text-white" />}
+                      </button>
+                      
+                      <div className="flex-1 min-w-0 pointer-events-none">
+                        <h3 className={`font-bold text-sm truncate transition-colors ${task.completed ? 'line-through text-slate-500' : 'text-slate-100'}`}>
+                          {safeTitle}
+                        </h3>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className={`text-[10px] uppercase font-bold tracking-wider opacity-80`}>
+                            {status === 'overdue' ? 'Atrasada' : 'Hoje'} {typeof task.dueTime === 'string' && task.dueTime ? `• ${task.dueTime}` : ''}
+                          </span>
+                          {task.hasReminder && !task.completed && <BellRing className={`w-3 h-3 ${status==='overdue' ? 'animate-pulse' : ''}`} />}
+                        </div>
                       </div>
-                    </div>
 
-                    {!task.completed && (
-                      <div className="p-2 -mr-2 cursor-grab active:cursor-grabbing opacity-50 hover:opacity-100" style={{ touchAction: 'none' }} onTouchStart={(e) => handleDragStart(e, task.id)} onTouchMove={handleDragMove} onTouchEnd={handleDragEnd} onMouseDown={(e) => handleDragStart(e, task.id)} onMouseMove={handleDragMove} onMouseUp={handleDragEnd} onMouseLeave={handleDragEnd}>
-                        <GripVertical className="w-5 h-5 pointer-events-none" />
-                      </div>
-                    )}
-                  </SwipeableItem>
-                </div>
-              );
+                      {!task.completed && (
+                        <div className="p-2 -mr-2 cursor-grab active:cursor-grabbing opacity-50 hover:opacity-100" style={{ touchAction: 'none' }} onTouchStart={(e) => handleDragStart(e, task.id)} onTouchMove={handleDragMove} onTouchEnd={handleDragEnd} onMouseDown={(e) => handleDragStart(e, task.id)} onMouseMove={handleDragMove} onMouseUp={handleDragEnd} onMouseLeave={handleDragEnd}>
+                          <GripVertical className="w-5 h-5 pointer-events-none" />
+                        </div>
+                      )}
+                    </SwipeableItem>
+                  </div>
+                );
+              } catch(e) { return null; }
             })}
 
             {dayTasksForDashboard.map(task => {
-              if(!task || typeof task !== 'object') return null;
-              const safeText = typeof task.text === 'string' ? task.text : 'Compromisso';
-              return (
-              <SwipeableItem key={`rt_${task.id}`} onEdit={()=>{}} onDeleteRequest={() => setDeletePrompt({ type: 'dailyTask', id: task.id, title: safeText, dateStr: todayStr })} frontClass="bg-slate-800/80 border-slate-700/80 p-3.5 flex items-center justify-between" wrapperClass="mb-0" isDragDisabled>
-                <label className="flex items-center gap-3 cursor-pointer flex-1 w-full">
-                  <div className="relative flex items-center justify-center w-6 h-6 shrink-0">
-                    <input type="checkbox" checked={!!task.completed} onChange={() => toggleDailyTask(todayStr, task.id)} className="peer sr-only"/>
-                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all duration-200 active:scale-75 ${task.completed ? 'bg-blue-500 border-blue-500' : 'border-slate-500'}`}>
-                      {task.completed && <Check className="w-3.5 h-3.5 text-white" />}
+              try {
+                if(!task || typeof task !== 'object') return null;
+                const safeText = typeof task.text === 'string' ? task.text : 'Compromisso';
+                return (
+                <SwipeableItem key={`rt_${task.id || Math.random()}`} onEdit={()=>{}} onDeleteRequest={() => setDeletePrompt({ type: 'dailyTask', id: task.id, title: safeText, dateStr: todayStr })} frontClass="bg-slate-800/80 border-slate-700/80 p-3.5 flex items-center justify-between" wrapperClass="mb-0" isDragDisabled>
+                  <label className="flex items-center gap-3 cursor-pointer flex-1 w-full">
+                    <div className="relative flex items-center justify-center w-6 h-6 shrink-0">
+                      <input type="checkbox" checked={!!task.completed} onChange={() => toggleDailyTask(todayStr, task.id)} className="peer sr-only"/>
+                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all duration-200 active:scale-75 ${task.completed ? 'bg-blue-500 border-blue-500' : 'border-slate-500'}`}>
+                        {task.completed && <Check className="w-3.5 h-3.5 text-white" />}
+                      </div>
                     </div>
-                  </div>
-                  <span className={`text-sm font-medium transition-colors ${task.completed ? 'text-slate-500 line-through' : 'text-slate-200'}`}>
-                    {safeText}
-                  </span>
-                </label>
-              </SwipeableItem>
-            )})}
+                    <span className={`text-sm font-medium transition-colors ${task.completed ? 'text-slate-500 line-through' : 'text-slate-200'}`}>
+                      {safeText}
+                    </span>
+                  </label>
+                </SwipeableItem>
+              )} catch(e) { return null; }
+            })}
           </div>
         )}
       </div>
@@ -727,24 +730,26 @@ export default function App() {
         {upcomingTasks.length > 0 ? (
           <div className="space-y-2 opacity-95">
             {upcomingTasks.map(task => {
-              if(!task || typeof task !== 'object') return null;
-              const status = getTaskStatus(task.dueDate, task.completed);
-              const classStr = getStatusColors(status, false);
-              const safeTitle = typeof task.title === 'string' ? task.title : 'Sem Título';
+              try {
+                if(!task || typeof task !== 'object') return null;
+                const status = getTaskStatus(task.dueDate, task.completed);
+                const classStr = getStatusColors(status, false);
+                const safeTitle = typeof task.title === 'string' ? task.title : 'Sem Título';
 
-              return (
-                <SwipeableItem key={task.id} onEdit={() => startEditTask(task)} onDeleteRequest={() => setDeletePrompt({ type: 'task', id: task.id, title: safeTitle })} frontClass={`${classStr} p-4 flex items-center gap-3`} wrapperClass="mb-0">
-                  <button onClick={() => toggleTask(task.id)} className={`w-6 h-6 rounded-md border flex items-center justify-center transition-all duration-300 shrink-0 active:scale-75 ${task.completed ? 'bg-blue-600 border-blue-600' : 'border-slate-500'}`}>
-                    {task.completed && <Check className="w-4 h-4 text-white" />}
-                  </button>
-                  <div className="flex-1 min-w-0 pointer-events-none">
-                    <h3 className={`font-medium text-sm truncate transition-colors`}>{safeTitle}</h3>
-                    <p className="text-[11px] opacity-70 font-mono mt-0.5">
-                      {formatDateLocal(task.dueDate)} {typeof task.dueTime === 'string' && task.dueTime ? `• ${task.dueTime}` : ''}
-                    </p>
-                  </div>
-                </SwipeableItem>
-              );
+                return (
+                  <SwipeableItem key={task.id || Math.random()} onEdit={() => startEditTask(task)} onDeleteRequest={() => setDeletePrompt({ type: 'task', id: task.id, title: safeTitle })} frontClass={`${classStr} p-4 flex items-center gap-3`} wrapperClass="mb-0">
+                    <button onClick={() => toggleTask(task.id)} className={`w-6 h-6 rounded-md border flex items-center justify-center transition-all duration-300 shrink-0 active:scale-75 ${task.completed ? 'bg-blue-600 border-blue-600' : 'border-slate-500'}`}>
+                      {task.completed && <Check className="w-4 h-4 text-white" />}
+                    </button>
+                    <div className="flex-1 min-w-0 pointer-events-none">
+                      <h3 className={`font-medium text-sm truncate transition-colors`}>{safeTitle}</h3>
+                      <p className="text-[11px] opacity-70 font-mono mt-0.5">
+                        {formatDateLocal(task.dueDate)} {typeof task.dueTime === 'string' && task.dueTime ? `• ${task.dueTime}` : ''}
+                      </p>
+                    </div>
+                  </SwipeableItem>
+                );
+              } catch(e) { return null; }
             })}
           </div>
         ) : (
@@ -808,13 +813,15 @@ export default function App() {
               <div className="bg-slate-900 border border-slate-700 rounded-xl p-3 space-y-2">
                 <div className="max-h-36 overflow-y-auto space-y-2 pr-1 hide-scrollbar">
                   {taskCategories.map(cat => {
-                    if(!cat || typeof cat !== 'object') return null;
-                    const safeLabel = typeof cat.label === 'string' ? cat.label : 'Categoria';
-                    return (
-                    <SwipeableItem key={cat.id} wrapperClass="mb-0" frontClass="p-2.5 bg-slate-800 border-slate-700 flex justify-between items-center" onEdit={() => setEditPrompt({ type: 'category', id: cat.id, label: safeLabel })} onDeleteRequest={() => setDeletePrompt({ type: 'category', id: cat.id, title: safeLabel })}>
-                      <span className="text-slate-200 truncate pr-2 font-medium w-full">{safeLabel}</span>
-                    </SwipeableItem>
-                  )})}
+                    try {
+                      if(!cat || typeof cat !== 'object') return null;
+                      const safeLabel = typeof cat.label === 'string' ? cat.label : 'Categoria';
+                      return (
+                      <SwipeableItem key={cat.id || Math.random()} wrapperClass="mb-0" frontClass="p-2.5 bg-slate-800 border-slate-700 flex justify-between items-center" onEdit={() => setEditPrompt({ type: 'category', id: cat.id, label: safeLabel })} onDeleteRequest={() => setDeletePrompt({ type: 'category', id: cat.id, title: safeLabel })}>
+                        <span className="text-slate-200 truncate pr-2 font-medium w-full">{safeLabel}</span>
+                      </SwipeableItem>
+                    )} catch(e) { return null; }
+                  })}
                 </div>
                 <div className="flex gap-2 mt-2 pt-2 border-t border-slate-700/50">
                   <input type="text" value={newCategoryLabel} onChange={e => setNewCategoryLabel(e.target.value)} className="flex-1 bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-sm text-white" placeholder="Nova..." />
@@ -824,14 +831,16 @@ export default function App() {
             ) : (
               <div className="flex gap-3 overflow-x-auto pb-4 hide-scrollbar -mx-2 px-2 snap-x snap-mandatory">
                 {taskCategories.map(cat => {
-                  if(!cat || typeof cat !== 'object') return null;
-                  const isSelected = newTask.category === cat.id;
-                  return (
-                    <button key={cat.id} type="button" onClick={() => { hapticFeedback(40); setNewTask({...newTask, category: cat.id}); }} className={`relative snap-center shrink-0 px-6 py-3.5 rounded-2xl text-sm font-bold transition-all duration-300 border-2 active:scale-95 ${isSelected ? 'bg-gradient-to-br from-blue-500 to-blue-600 border-blue-400 text-white scale-105' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>
-                      {isSelected && <span className="absolute -inset-1 rounded-2xl border border-blue-400/50 animate-pulse pointer-events-none"></span>}
-                      {typeof cat.label === 'string' ? cat.label : 'Cat'}
-                    </button>
-                  );
+                  try {
+                    if(!cat || typeof cat !== 'object') return null;
+                    const isSelected = newTask.category === cat.id;
+                    return (
+                      <button key={cat.id || Math.random()} type="button" onClick={() => { hapticFeedback(40); setNewTask({...newTask, category: cat.id}); }} className={`relative snap-center shrink-0 px-6 py-3.5 rounded-2xl text-sm font-bold transition-all duration-300 border-2 active:scale-95 ${isSelected ? 'bg-gradient-to-br from-blue-500 to-blue-600 border-blue-400 text-white scale-105' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>
+                        {isSelected && <span className="absolute -inset-1 rounded-2xl border border-blue-400/50 animate-pulse pointer-events-none"></span>}
+                        {typeof cat.label === 'string' ? cat.label : 'Cat'}
+                      </button>
+                    );
+                  } catch(e) { return null; }
                 })}
               </div>
             )}
@@ -847,51 +856,54 @@ export default function App() {
 
       <div className="space-y-1">
         {sortedTasksGlobally.map(task => {
-          if (!task || typeof task !== 'object') return null; // Blindagem Anti-Crash
-          
-          const status = getTaskStatus(task.dueDate, task.completed);
-          const classStr = getStatusColors(status, status === 'overdue');
-          
-          // BLINDAGEM DA CATEGORIA E TÍTULO
-          const categoryObj = taskCategories.find(c => c && c.id === task.category);
-          let categoryLabel = 'Geral';
-          if (categoryObj && typeof categoryObj.label === 'string') {
-             categoryLabel = categoryObj.label;
-          } else if (typeof task.category === 'string') {
-             categoryLabel = task.category;
-          }
+          try {
+            if (!task || typeof task !== 'object') return null; 
+            
+            const status = getTaskStatus(task.dueDate, task.completed);
+            const classStr = getStatusColors(status, status === 'overdue');
+            
+            const categoryObj = taskCategories.find(c => c && c.id === task.category);
+            let categoryLabel = 'Geral';
+            if (categoryObj && typeof categoryObj.label === 'string') {
+               categoryLabel = categoryObj.label;
+            } else if (typeof task.category === 'string') {
+               categoryLabel = task.category;
+            }
 
-          const safeTitle = typeof task.title === 'string' ? task.title : 'Sem Título';
-          const safeDueTime = typeof task.dueTime === 'string' ? task.dueTime : '';
-          
-          const recurrenceLabels = { daily: 'Diária', weekly: 'Semanal', monthly: 'Mensal', yearly: 'Anual' };
-          const recLabel = typeof task.recurrence === 'string' ? recurrenceLabels[task.recurrence] : null;
-          
-          return (
-            <SwipeableItem key={task.id} onEdit={() => startEditTask(task)} onDeleteRequest={() => setDeletePrompt({ type: 'task', id: task.id, title: safeTitle })} frontClass={`${classStr} p-4 flex items-center gap-4`}>
-              <button onClick={() => toggleTask(task.id)} className={`w-6 h-6 rounded-md border flex items-center justify-center shrink-0 active:scale-75 ${task.completed ? 'bg-blue-600 border-blue-600' : 'border-slate-500'}`}>
-                {task.completed && <Check className="w-4 h-4 text-white" />}
-              </button>
-              
-              <div className="flex-1 min-w-0 pointer-events-none">
-                <div className="flex justify-between items-center">
-                   <h3 className={`font-bold truncate transition-colors`}>{safeTitle}</h3>
-                   {!task.completed && task.hasReminder && <BellRing className={`w-4 h-4 shrink-0 opacity-80`} />}
+            const safeTitle = typeof task.title === 'string' ? task.title : 'Sem Título';
+            const safeDueTime = typeof task.dueTime === 'string' ? task.dueTime : '';
+            
+            const recurrenceLabels = { daily: 'Diária', weekly: 'Semanal', monthly: 'Mensal', yearly: 'Anual' };
+            const recLabel = typeof task.recurrence === 'string' ? recurrenceLabels[task.recurrence] : null;
+            
+            return (
+              <SwipeableItem key={task.id || Math.random()} onEdit={() => startEditTask(task)} onDeleteRequest={() => setDeletePrompt({ type: 'task', id: task.id, title: safeTitle })} frontClass={`${classStr} p-4 flex items-center gap-4`}>
+                <button onClick={() => toggleTask(task.id)} className={`w-6 h-6 rounded-md border flex items-center justify-center shrink-0 active:scale-75 ${task.completed ? 'bg-blue-600 border-blue-600' : 'border-slate-500'}`}>
+                  {task.completed && <Check className="w-4 h-4 text-white" />}
+                </button>
+                
+                <div className="flex-1 min-w-0 pointer-events-none">
+                  <div className="flex justify-between items-center">
+                     <h3 className={`font-bold truncate transition-colors`}>{safeTitle}</h3>
+                     {!task.completed && task.hasReminder && <BellRing className={`w-4 h-4 shrink-0 opacity-80`} />}
+                  </div>
+                  <p className="text-xs flex items-center gap-2 mt-1 opacity-80">
+                    <span className="capitalize">{categoryLabel}</span>
+                    <span>•</span>
+                    <span>{formatDateLocal(task.dueDate)} {safeDueTime && `• ${safeDueTime}`}</span>
+                    {recLabel && (
+                       <>
+                         <span>•</span>
+                         <span className="text-blue-400 flex items-center gap-1">🔁 {recLabel}</span>
+                       </>
+                    )}
+                  </p>
                 </div>
-                <p className="text-xs flex items-center gap-2 mt-1 opacity-80">
-                  <span className="capitalize">{categoryLabel}</span>
-                  <span>•</span>
-                  <span>{formatDateLocal(task.dueDate)} {safeDueTime && `• ${safeDueTime}`}</span>
-                  {recLabel && (
-                     <>
-                       <span>•</span>
-                       <span className="text-blue-400 flex items-center gap-1">🔁 {recLabel}</span>
-                     </>
-                  )}
-                </p>
-              </div>
-            </SwipeableItem>
-          );
+              </SwipeableItem>
+            );
+          } catch(e) {
+            return null; // Omitir qualquer item que gere erro fatal
+          }
         })}
       </div>
     </div>
@@ -946,21 +958,24 @@ export default function App() {
 
           <div className="space-y-2 mt-3">
             {dayTasks.map(task => {
-              if(!task || typeof task !== 'object') return null;
-              const safeText = typeof task.text === 'string' ? task.text : 'Compromisso';
-              return(
-              <SwipeableItem key={task.id} frontClass="bg-slate-800/80 border-slate-700/80 p-3.5 flex items-center justify-between" wrapperClass="mb-0" onEdit={()=>{}} onDeleteRequest={() => setDeletePrompt({ type: 'dailyTask', id: task.id, title: safeText, dateStr })}>
-                <label className="flex items-center gap-3 cursor-pointer flex-1 w-full">
-                  <div className="relative flex items-center justify-center w-6 h-6 shrink-0">
-                    <input type="checkbox" checked={!!task.completed} onChange={() => toggleDailyTask(dateStr, task.id)} className="peer sr-only"/>
-                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all duration-200 active:scale-75 ${task.completed ? 'bg-blue-500 border-blue-500' : 'border-slate-500'}`}>
-                      {task.completed && <Check className="w-3.5 h-3.5 text-white" />}
+              try {
+                if(!task || typeof task !== 'object') return null;
+                const safeText = typeof task.text === 'string' ? task.text : 'Compromisso';
+                return(
+                <SwipeableItem key={task.id || Math.random()} frontClass="bg-slate-800/80 border-slate-700/80 p-3.5 flex items-center justify-between" wrapperClass="mb-0" onEdit={()=>{}} onDeleteRequest={() => setDeletePrompt({ type: 'dailyTask', id: task.id, title: safeText, dateStr })}>
+                  <label className="flex items-center gap-3 cursor-pointer flex-1 w-full">
+                    <div className="relative flex items-center justify-center w-6 h-6 shrink-0">
+                      <input type="checkbox" checked={!!task.completed} onChange={() => toggleDailyTask(dateStr, task.id)} className="peer sr-only"/>
+                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all duration-200 active:scale-75 ${task.completed ? 'bg-blue-500 border-blue-500' : 'border-slate-500'}`}>
+                        {task.completed && <Check className="w-3.5 h-3.5 text-white" />}
+                      </div>
                     </div>
-                  </div>
-                  <span className={`text-sm font-medium transition-colors ${task.completed ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{safeText}</span>
-                </label>
-              </SwipeableItem>
-            )})}
+                    <span className={`text-sm font-medium transition-colors ${task.completed ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{safeText}</span>
+                  </label>
+                </SwipeableItem>
+                );
+              } catch(e) { return null; }
+            })}
           </div>
         </div>
 
@@ -977,22 +992,24 @@ export default function App() {
           )}
           <div className="space-y-2">
             {habitsList.map(habit => {
-              if(!habit || typeof habit !== 'object') return null;
-              const isDone = !!dayHabits[habit.id];
-              const safeLabel = typeof habit.label === 'string' ? habit.label : 'Hábito';
-              return (
-                <SwipeableItem key={habit.id} frontClass="bg-slate-800 border-slate-700 p-4 flex items-center justify-between" wrapperClass="mb-0" onEdit={() => setEditPrompt({ type: 'habit', id: habit.id, label: safeLabel })} onDeleteRequest={() => setDeletePrompt({ type: 'habit', id: habit.id, title: safeLabel })}>
-                  <label className="flex items-center gap-4 cursor-pointer flex-1 w-full">
-                    <div className="relative flex items-center justify-center w-8 h-8 shrink-0">
-                      <input type="checkbox" checked={isDone} onChange={() => toggleHabit(dateStr, habit.id)} className="peer sr-only" />
-                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all duration-300 active:scale-75 ${isDone ? 'bg-emerald-500 border-emerald-500' : 'border-slate-500'}`}>
-                        {isDone && <Check className="w-4 h-4 text-white" />}
+              try {
+                if(!habit || typeof habit !== 'object') return null;
+                const isDone = !!dayHabits[habit.id];
+                const safeLabel = typeof habit.label === 'string' ? habit.label : 'Hábito';
+                return (
+                  <SwipeableItem key={habit.id || Math.random()} frontClass="bg-slate-800 border-slate-700 p-4 flex items-center justify-between" wrapperClass="mb-0" onEdit={() => setEditPrompt({ type: 'habit', id: habit.id, label: safeLabel })} onDeleteRequest={() => setDeletePrompt({ type: 'habit', id: habit.id, title: safeLabel })}>
+                    <label className="flex items-center gap-4 cursor-pointer flex-1 w-full">
+                      <div className="relative flex items-center justify-center w-8 h-8 shrink-0">
+                        <input type="checkbox" checked={isDone} onChange={() => toggleHabit(dateStr, habit.id)} className="peer sr-only" />
+                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all duration-300 active:scale-75 ${isDone ? 'bg-emerald-500 border-emerald-500' : 'border-slate-500'}`}>
+                          {isDone && <Check className="w-4 h-4 text-white" />}
+                        </div>
                       </div>
-                    </div>
-                    <span className={`text-base font-medium ${isDone ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{safeLabel}</span>
-                  </label>
-                </SwipeableItem>
-              );
+                      <span className={`text-base font-medium ${isDone ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{safeLabel}</span>
+                    </label>
+                  </SwipeableItem>
+                );
+              } catch(e) { return null; }
             })}
           </div>
         </div>
@@ -1017,13 +1034,16 @@ export default function App() {
           <SwipeHint />
           <div className="max-h-64 overflow-y-auto space-y-2 pr-1 hide-scrollbar">
             {portfolioCategories.map(cat => {
-              if(!cat || typeof cat !== 'object') return null;
-              const safeLabel = typeof cat.label === 'string' ? cat.label : 'Ativo';
-              return (
-              <SwipeableItem key={cat.id} wrapperClass="mb-0" frontClass="p-3 bg-slate-900 border-slate-700 flex justify-between items-center" onEdit={() => setEditPrompt({ type: 'portfolioCat', id: cat.id, label: safeLabel })} onDeleteRequest={() => setDeletePrompt({ type: 'portfolioCat', id: cat.id, title: safeLabel })}>
-                <span className="text-slate-200 truncate pr-2 font-medium w-full">{safeLabel}</span>
-              </SwipeableItem>
-            )})}
+              try {
+                if(!cat || typeof cat !== 'object') return null;
+                const safeLabel = typeof cat.label === 'string' ? cat.label : 'Ativo';
+                return (
+                <SwipeableItem key={cat.id || Math.random()} wrapperClass="mb-0" frontClass="p-3 bg-slate-900 border-slate-700 flex justify-between items-center" onEdit={() => setEditPrompt({ type: 'portfolioCat', id: cat.id, label: safeLabel })} onDeleteRequest={() => setDeletePrompt({ type: 'portfolioCat', id: cat.id, title: safeLabel })}>
+                  <span className="text-slate-200 truncate pr-2 font-medium w-full">{safeLabel}</span>
+                </SwipeableItem>
+                );
+              } catch(e) { return null; }
+            })}
           </div>
           <div className="flex gap-2 mt-2 pt-4 border-t border-slate-700/50">
             <input type="text" value={newPortfolioCatLabel} onChange={e => setNewPortfolioCatLabel(e.target.value)} className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white" placeholder="Novo ativo..." />
@@ -1033,29 +1053,31 @@ export default function App() {
       ) : (
         <div className="space-y-4">
           {portfolioCategories.map(cat => {
-            if(!cat || typeof cat !== 'object') return null;
-            const catValueNum = parseCurrencyToNumber(portfolio[cat.id]);
-            const percent = currentPortfolioTotal > 0 ? ((catValueNum / currentPortfolioTotal) * 100).toFixed(1) : 0;
-            const safeLabel = typeof cat.label === 'string' ? cat.label : 'Ativo';
-            
-            return (
-              <div key={cat.id} className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm focus-within:border-blue-500/50 transition-all flex flex-col gap-3">
-                <div className="flex justify-between items-center">
-                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">{safeLabel}</label>
-                  <span className="text-[10px] font-bold px-2 py-1 bg-slate-900 text-blue-400 rounded-md border border-slate-700">
-                    {percent}% da carteira
-                  </span>
+            try {
+              if(!cat || typeof cat !== 'object') return null;
+              const catValueNum = parseCurrencyToNumber(portfolio[cat.id]);
+              const percent = currentPortfolioTotal > 0 ? ((catValueNum / currentPortfolioTotal) * 100).toFixed(1) : 0;
+              const safeLabel = typeof cat.label === 'string' ? cat.label : 'Ativo';
+              
+              return (
+                <div key={cat.id || Math.random()} className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm focus-within:border-blue-500/50 transition-all flex flex-col gap-3">
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">{safeLabel}</label>
+                    <span className="text-[10px] font-bold px-2 py-1 bg-slate-900 text-blue-400 rounded-md border border-slate-700">
+                      {percent}% da carteira
+                    </span>
+                  </div>
+                  
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-medium text-sm">R$</span>
+                    <input type="text" inputMode="numeric" placeholder="0,00" value={portfolio[cat.id] || ''} onChange={e => handlePortfolioChange(cat.id, e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg py-3 pl-9 pr-3 text-white font-mono focus:outline-none transition-colors text-base tracking-tighter shadow-inner" />
+                  </div>
+                  <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
+                    <div className="bg-blue-500 h-1.5 rounded-full" style={{ width: `${percent}%` }}></div>
+                  </div>
                 </div>
-                
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-medium text-sm">R$</span>
-                  <input type="text" inputMode="numeric" placeholder="0,00" value={portfolio[cat.id] || ''} onChange={e => handlePortfolioChange(cat.id, e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg py-3 pl-9 pr-3 text-white font-mono focus:outline-none transition-colors text-base tracking-tighter shadow-inner" />
-                </div>
-                <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
-                  <div className="bg-blue-500 h-1.5 rounded-full" style={{ width: `${percent}%` }}></div>
-                </div>
-              </div>
-            )
+              );
+            } catch(e) { return null; }
           })}
         </div>
       )}
@@ -1169,7 +1191,7 @@ export default function App() {
               </div>
 
               <div className="p-4 border-t border-slate-800">
-                <p className="text-center text-[10px] text-slate-500 mt-4 uppercase tracking-widest">Planner Full v2.2.2</p>
+                <p className="text-center text-[10px] text-slate-500 mt-4 uppercase tracking-widest">Planner Full v2.2.3</p>
               </div>
             </div>
           </div>
