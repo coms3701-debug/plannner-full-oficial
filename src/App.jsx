@@ -1,553 +1,1268 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
-import { getFirestore, collection, query, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
-  Star, BookOpen, Gamepad2, Headphones, Utensils, 
-  Moon, Heart, Check, Trash2, Plus, CalendarDays, Zap,
-  Bell, BellOff, Edit3, AlertTriangle, X, Key, Smartphone, Copy, LogOut, Clock, Gift
+  Home, CheckSquare, Activity, Briefcase, CalendarClock, Plus, Check, ChevronLeft, ChevronRight, 
+  Trash2, Edit2, X, User, Settings, Star, Download, ListTodo, CheckCircle2,
+  Cloud, CloudOff, RefreshCw, GripVertical, BellRing, AlertCircle, Volume2
 } from 'lucide-react';
 
-// --- CONFIGURAÇÃO DO FIREBASE ---
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
-  apiKey: "AIzaSyCbjh-p8BxqpKCNQcy6qn6cRNyJmiaFH2g",
-  authDomain: "rotina-paula.firebaseapp.com",
-  projectId: "rotina-paula",
-  storageBucket: "rotina-paula.firebasestorage.app",
-  messagingSenderId: "68316009831",
-  appId: "1:68316009831:web:5b3f02558249d12d4e4bc2",
+// --- IMPORTS DO FIREBASE ---
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
+import { getFirestore, doc, setDoc, getDoc } from 'firebase/firestore';
+
+// --- UTILITÁRIOS NATIVOS E BLINDADOS ---
+const hapticFeedback = (pattern = 40) => {
+  try {
+    if (typeof window !== 'undefined' && window.navigator && typeof window.navigator.vibrate === 'function') {
+      window.navigator.vibrate(pattern);
+    }
+  } catch (e) {}
 };
 
-// Inicialização Segura
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-const auth = getAuth(app);
-const db = getFirestore(app);
-
-// ID da App sanitizado
-const rawAppId = typeof __app_id !== 'undefined' ? String(__app_id) : 'rotina-paula-v40';
-const appId = rawAppId.replace(/\//g, '_'); 
-
-const generateSafeId = () => Date.now().toString(36) + Math.random().toString(36).substring(2, 10);
-
-// --- Sistema de Áudio ---
-let globalAudioCtx = null;
-const initAudio = () => {
-  if (!globalAudioCtx) {
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (AudioContext) globalAudioCtx = new AudioContext();
-  }
-  if (globalAudioCtx && globalAudioCtx.state === 'suspended') globalAudioCtx.resume();
+const playBeep = () => {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, ctx.currentTime); 
+    gainNode.gain.setValueAtTime(0.1, ctx.currentTime); 
+    osc.connect(gainNode);
+    gainNode.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.3);
+  } catch (e) {}
 };
 
-const playTikTokSound = () => {
-  initAudio(); 
-  if (!globalAudioCtx) return;
-  const playNote = (f, s, d, v) => {
-    const o = globalAudioCtx.createOscillator();
-    const g = globalAudioCtx.createGain();
-    o.type = 'sine'; o.frequency.setValueAtTime(f, globalAudioCtx.currentTime + s);
-    g.gain.setValueAtTime(0, globalAudioCtx.currentTime + s);
-    g.gain.linearRampToValueAtTime(v, globalAudioCtx.currentTime + s + 0.05);
-    g.gain.exponentialRampToValueAtTime(0.001, globalAudioCtx.currentTime + s + d);
-    o.connect(g); g.connect(globalAudioCtx.destination);
-    o.start(globalAudioCtx.currentTime + s); o.stop(globalAudioCtx.currentTime + s + d);
+const requestNotificationPermission = () => {
+  try {
+    if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") {
+      Notification.requestPermission();
+    }
+  } catch (e) {}
+};
+
+const sendNativeNotification = (title, body) => {
+  try {
+    if (!("Notification" in window)) return;
+    if (Notification.permission === "granted") {
+      new Notification(title, { body, icon: '/icon.png' });
+      playBeep();
+      hapticFeedback([100, 50, 100]);
+    }
+  } catch (e) {}
+};
+
+// FORMATAÇÃO SEGURA DE DATAS (ANTI-CRASH ABSOLUTO)
+const parseLocalDate = (dateStr) => {
+  try {
+    if (!dateStr || typeof dateStr !== 'string') return new Date(0);
+    // Tenta corrigir datas antigas no formato DD/MM/AAAA para AAAA-MM-DD
+    if (dateStr.includes('/')) {
+       const parts = dateStr.split('/');
+       if (parts.length === 3) {
+          return new Date(parts[2], parts[1] - 1, parts[0]);
+       }
+    }
+    const [y, m, d] = dateStr.split('-');
+    if (!y || !m || !d) return new Date(0);
+    return new Date(y, m - 1, d);
+  } catch (e) { return new Date(0); }
+};
+
+const formatDateLocal = (dateStr) => {
+  try {
+    if (!dateStr || typeof dateStr !== 'string') return '';
+    if (dateStr.includes('/')) return dateStr; // Já está formatada
+    const [y, m, d] = dateStr.split('-');
+    if (!y || !m || !d) return dateStr;
+    return `${d}/${m}/${y}`;
+  } catch (e) { return ''; }
+};
+
+// --- HOOKS CUSTOMIZADOS ---
+function useLocalStorage(key, initialValue) {
+  const [storedValue, setStoredValue] = useState(() => {
+    try {
+      const item = window.localStorage.getItem(key);
+      return item ? JSON.parse(item) : initialValue;
+    } catch (error) {
+      return initialValue;
+    }
+  });
+
+  const setValue = (value) => {
+    try {
+      const valueToStore = value instanceof Function ? value(storedValue) : value;
+      setStoredValue(valueToStore);
+      window.localStorage.setItem(key, JSON.stringify(valueToStore));
+    } catch (error) { }
   };
-  playNote(587.33, 0, 0.3, 0.5); playNote(880.00, 0.15, 0.4, 0.5); 
-};
 
-// --- Constantes da Aplicação ---
-const DAYS = [
-  { id: 'seg', label: 'Seg' }, { id: 'ter', label: 'Ter' },
-  { id: 'qua', label: 'Qua' }, { id: 'qui', label: 'Qui' },
-  { id: 'sex', label: 'Sex' }, { id: 'sab', label: 'Sáb' },
-  { id: 'dom', label: 'Dom' }
+  return [storedValue, setValue];
+}
+
+// --- CONSTANTES ---
+const INITIAL_HABITS_LIST = [
+  { id: 'estudo', label: 'Estudo/conhecimento' },
+  { id: 'reserva', label: 'Reserva de emergência' },
+  { id: 'invest', label: 'Investimentos' }
 ];
 
-const TASK_TYPES = {
-  study: { icon: BookOpen, color: 'text-purple-400', bg: 'bg-purple-500/10', border: 'border-purple-500/30', points: 50, label: 'Estudo/Dever' },
-  fun: { icon: Gamepad2, color: 'text-cyan-400', bg: 'bg-cyan-500/10', border: 'border-cyan-500/30', points: 10, label: 'Roblox' },
-  routine: { icon: Check, color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', points: 10, label: 'Rotina' },
-  food: { icon: Utensils, color: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/30', points: 10, label: 'Refeição' },
-  sleep: { icon: Moon, color: 'text-indigo-400', bg: 'bg-indigo-500/10', border: 'border-indigo-500/30', points: 10, label: 'Dormir' },
-  health: { icon: Heart, color: 'text-rose-400', bg: 'bg-rose-500/10', border: 'border-rose-500/30', points: 20, label: 'Saúde/PSI' },
-  music: { icon: Headphones, color: 'text-pink-400', bg: 'bg-pink-500/10', border: 'border-pink-500/30', points: 10, label: 'Música' }
+const INITIAL_CATEGORIES = [
+  { id: 'meta', label: 'Meta' },
+  { id: 'pagamento', label: 'Pagamento' },
+  { id: 'estudo', label: 'Estudo' },
+  { id: 'investimento', label: 'Investimento' }
+];
+
+const INITIAL_PORTFOLIO_CATEGORIES = [
+  { id: 'reserva', label: 'Reserva de Emergência' },
+  { id: 'acoes_br', label: 'Ações Nacionais' },
+  { id: 'fii', label: 'Fundos Imobiliários' }
+];
+
+const formatCurrencyInput = (value) => {
+  if (!value) return '';
+  const digits = String(value).replace(/\D/g, '');
+  if (!digits) return '';
+  const numberValue = Number(digits) / 100;
+  return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(numberValue);
 };
 
-const generateDefaultTasks = () => {
-  const tasks = [];
-  ['seg', 'ter', 'qua', 'sex'].forEach(day => {
-    tasks.push({ day, time: '14:00', title: 'Almoço', type: 'food', completed: false });
-    tasks.push({ day, time: '15:00', title: 'Descansar (Roblox)', type: 'fun', completed: false });
-    tasks.push({ day, time: '16:00', title: 'Dever de Casa', type: 'study', completed: false });
-    tasks.push({ day, time: '17:00', title: 'Estudar', type: 'study', completed: false });
-    tasks.push({ day, time: '18:00', title: 'Banho e Mochila', type: 'routine', completed: false });
-    tasks.push({ day, time: '19:00', title: 'Jantar', type: 'food', completed: false });
-    tasks.push({ day, time: '20:00', title: 'Hora de Dormir', type: 'sleep', completed: false });
-  });
-  tasks.push({ day: 'qui', time: '14:00', title: 'Almoço', type: 'food', completed: false });
-  tasks.push({ day: 'qui', time: '15:00', title: 'Psicólogo (PSI)', type: 'health', completed: false });
-  tasks.push({ day: 'qui', time: '16:00', title: 'Descansar', type: 'fun', completed: false });
-  tasks.push({ day: 'qui', time: '17:00', title: 'Dever de Casa', type: 'study', completed: false });
-  tasks.push({ day: 'qui', time: '18:00', title: 'Estudar', type: 'study', completed: false });
-  tasks.push({ day: 'qui', time: '19:00', title: 'Banho, Mochila e Jantar', type: 'routine', completed: false });
-  tasks.push({ day: 'qui', time: '20:00', title: 'Hora de Dormir', type: 'sleep', completed: false });
-  ['sab', 'dom'].forEach(day => {
-    tasks.push({ day, time: '10:00', title: 'Café da Manhã', type: 'food', completed: false });
-    tasks.push({ day, time: '11:00', title: 'Sessão Roblox 🎮', type: 'fun', completed: false });
-    tasks.push({ day, time: '14:00', title: 'Almoço', type: 'food', completed: false });
-    tasks.push({ day, time: '16:00', title: 'Revisão Leve', type: 'study', completed: false });
-    tasks.push({ day, time: '17:00', title: 'Ouvir K-Pop 🎵', type: 'music', completed: false });
-    tasks.push({ day, time: '19:00', title: 'Jantar', type: 'food', completed: false });
-    tasks.push({ day, time: '21:00', title: 'Dormir', type: 'sleep', completed: false });
-  });
-  return tasks.map(t => ({ ...t, points: TASK_TYPES[t.type].points, id: generateSafeId() }));
+const parseCurrencyToNumber = (formattedValue) => {
+  if (!formattedValue) return 0;
+  const digits = String(formattedValue).replace(/\D/g, '');
+  return Number(digits) / 100 || 0;
 };
 
-const SwipeableTask = ({ task, onToggle, onEdit, onDeleteRequest }) => {
-  const [offsetX, setOffsetX] = useState(0);
+// --- COMPONENTE DESLIZE SEGURO ---
+const SwipeableItem = ({ onEdit, onDeleteRequest, children, frontClass = "bg-slate-800 border-slate-700", wrapperClass = "mb-3", isDragDisabled = false }) => {
+  const [offset, setOffset] = useState(0);
+  const [isSwiping, setIsSwiping] = useState(false);
   const startX = useRef(0);
-  
-  const TypeInfo = TASK_TYPES[task.type] || TASK_TYPES['study'];
-  const IconComponent = TypeInfo.icon;
+  const startY = useRef(0);
+  const isDragging = useRef(false);
 
-  const handleTouchStart = (e) => { startX.current = e.touches[0].clientX; };
-  const handleTouchMove = (e) => {
-    const diff = e.touches[0].clientX - startX.current;
-    if (diff > 120) setOffsetX(120); else if (diff < -120) setOffsetX(-120); else setOffsetX(diff);
+  const handleStart = (e) => {
+    if (isDragDisabled || !e) return;
+    const clientX = e?.type?.includes('mouse') ? e.clientX : (e?.touches?.[0]?.clientX || 0);
+    const clientY = e?.type?.includes('mouse') ? e.clientY : (e?.touches?.[0]?.clientY || 0);
+    startX.current = clientX;
+    startY.current = clientY;
+    isDragging.current = true;
+    setIsSwiping(true);
   };
-  const handleTouchEnd = () => {
-    if (offsetX > 80) onEdit(task); else if (offsetX < -80) onDeleteRequest(task);
-    setOffsetX(0);
+
+  const handleMove = (e) => {
+    if (!isDragging.current || isDragDisabled || !e) return;
+    const clientX = e?.type?.includes('mouse') ? e.clientX : (e?.touches?.[0]?.clientX || 0);
+    const clientY = e?.type?.includes('mouse') ? e.clientY : (e?.touches?.[0]?.clientY || 0);
+    const diffX = clientX - startX.current;
+    const diffY = clientY - startY.current;
+
+    if (Math.abs(diffY) > Math.abs(diffX) && Math.abs(diffY) > 10) {
+      isDragging.current = false;
+      setOffset(0);
+      return;
+    }
+    let newOffset = diffX;
+    if (newOffset > 100) newOffset = 100 + (newOffset - 100) * 0.2;
+    if (newOffset < -100) newOffset = -100 + (newOffset + 100) * 0.2;
+    setOffset(newOffset);
+  };
+
+  const handleEnd = () => {
+    if (isDragDisabled || !isDragging.current) return;
+    isDragging.current = false;
+    setIsSwiping(false);
+    if (offset > 70) { hapticFeedback([30, 50]); onEdit(); }
+    else if (offset < -70) { hapticFeedback([30, 50]); onDeleteRequest(); }
+    setOffset(0);
   };
 
   return (
-    <div className="relative overflow-hidden rounded-2xl mb-4 group touch-pan-y">
-      <div className="absolute inset-0 flex items-center justify-between px-6 rounded-2xl bg-slate-800">
-        <div className={`flex items-center gap-2 font-bold transition-opacity ${offsetX > 20 ? 'opacity-100 text-cyan-400' : 'opacity-0'}`}><Edit3 size={20} /> Editar</div>
-        <div className={`flex items-center gap-2 font-bold transition-opacity ${offsetX < -20 ? 'opacity-100 text-rose-400' : 'opacity-0'}`}>Deletar <Trash2 size={20} /></div>
+    <div className={`relative w-full rounded-xl bg-slate-900 overflow-hidden shadow-sm ${wrapperClass}`}>
+      <div className="absolute inset-0 flex justify-between items-center px-4 rounded-xl font-medium text-white pointer-events-none">
+        <div className={`flex items-center gap-2 transition-all duration-200 ${offset > 20 ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-4'} text-blue-400`}>
+          <Edit2 className="w-5 h-5" /> <span className="text-sm">Editar</span>
+        </div>
+        <div className={`flex items-center gap-2 transition-all duration-200 ${offset < -20 ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-4'} text-red-500`}>
+          <span className="text-sm">Excluir</span> <Trash2 className="w-5 h-5" />
+        </div>
       </div>
-      <div 
-        onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}
-        className={`relative flex items-center gap-4 p-4 rounded-2xl border transition-all duration-300 ${task.completed ? 'bg-slate-900 border-slate-800 opacity-60' : `bg-slate-900 ${TypeInfo.border}`}`}
-        style={{ transform: `translateX(${offsetX}px)`, transition: offsetX === 0 ? 'transform 0.3s ease-out' : 'none' }}
+      <div
+        onTouchStart={handleStart} onTouchMove={handleMove} onTouchEnd={handleEnd}
+        onMouseDown={handleStart} onMouseMove={handleMove} onMouseUp={handleEnd} onMouseLeave={handleEnd}
+        style={{ transform: `translateX(${offset}px)`, touchAction: isDragDisabled ? 'auto' : 'pan-y' }}
+        className={`relative w-full rounded-xl border transition-transform ${!isSwiping ? 'duration-300 ease-out' : 'duration-0'} ${frontClass}`}
       >
-        <button onClick={() => onToggle(task)} className={`flex-shrink-0 w-10 h-10 rounded-full border-2 flex items-center justify-center transition-all ${task.completed ? 'bg-emerald-500 border-emerald-500 text-slate-950 shadow-[0_0_15px_rgba(16,185,129,0.4)]' : 'border-slate-600 text-transparent'}`}>
-          <Check size={20} strokeWidth={3} />
-        </button>
-        <div className="flex-1 select-none pointer-events-none">
-          <div className={`flex items-center gap-2 font-mono font-black text-[10px] mb-1 uppercase tracking-tighter ${task.completed ? 'text-slate-600' : TypeInfo.color}`}>
-            <IconComponent size={12} />
-            {task.time}
-          </div>
-          <span className={`font-black text-xl leading-tight block ${task.completed ? 'text-slate-700 line-through' : 'text-slate-100'}`}>{task.title}</span>
-        </div>
-        <div className={`flex items-center gap-1 font-black text-lg ${task.completed ? 'text-slate-700' : 'text-yellow-400'}`}>
-          +{task.points} <Star size={14} fill="currentColor" />
-        </div>
+        {children}
       </div>
     </div>
   );
 };
 
-export default function App() {
-  const [user, setUser] = useState(null);
-  const [loadingAuth, setLoadingAuth] = useState(true);
-  const [syncCode, setSyncCode] = useState(() => { try { return localStorage.getItem('paula_sync_code') || null; } catch { return null; } });
-  const [joinCodeInput, setJoinCodeInput] = useState('');
-  const [isJoining, setIsJoining] = useState(false);
-
-  const [tasks, setTasks] = useState([]);
-  const [stats, setStats] = useState({ totalStars: 0 });
-  const [selectedDay, setSelectedDay] = useState('seg');
-  const [loadingData, setLoadingData] = useState(false);
-  const [errorMsg, setErrorMsg] = useState(null);
-  
-  const [alarmsEnabled, setAlarmsEnabled] = useState(false);
-  const [lastAlertTime, setLastAlertTime] = useState(null);
-  
-  const [showRobuxReward, setShowRobuxReward] = useState(false);
-  const prevStars = useRef(-1); 
-  const daysContainerRef = useRef(null);
-  const [currentTime, setCurrentTime] = useState(new Date());
-
-  const [showForm, setShowForm] = useState(false);
-  const [editingTaskId, setEditingTaskId] = useState(null);
-  const [newTime, setNewTime] = useState('');
-  const [newTitle, setNewTitle] = useState('');
-  const [newType, setNewType] = useState('study');
-  const [taskToDelete, setTaskToDelete] = useState(null);
-  const [showCopied, setShowCopied] = useState(false);
-
-  // --- CONFIGURAÇÃO PWA APONTANDO PARA O SEU NOVO ÍCONE ---
-  useEffect(() => {
-    document.title = "Rotina Paula";
-    const setMeta = (name, content) => {
-      let meta = document.querySelector(`meta[name="${name}"]`);
-      if (!meta) { meta = document.createElement('meta'); meta.name = name; document.head.appendChild(meta); }
-      meta.content = content;
-    };
-    setMeta('apple-mobile-web-app-capable', 'yes');
-    setMeta('mobile-web-app-capable', 'yes');
-    setMeta('apple-mobile-web-app-status-bar-style', 'black-translucent');
-    setMeta('theme-color', '#020617'); 
-    setMeta('viewport', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover');
-
-    // Aponta diretamente para o ficheiro icon.png na pasta public do Vercel
-    let appleIcon = document.querySelector('link[rel="apple-touch-icon"]');
-    if (!appleIcon) { appleIcon = document.createElement('link'); appleIcon.rel = 'apple-touch-icon'; document.head.appendChild(appleIcon); }
-    appleIcon.href = '/icon.png';
-  }, []);
-
-  useEffect(() => {
-    const todayIndex = new Date().getDay();
-    const currentDayMap = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
-    setSelectedDay(currentDayMap[todayIndex]);
-  }, []);
-
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
-    if (daysContainerRef.current) {
-      const activeEl = document.getElementById(`day-btn-${selectedDay}`);
-      if (activeEl) {
-        daysContainerRef.current.scrollTo({
-          left: activeEl.offsetLeft - daysContainerRef.current.offsetWidth / 2 + activeEl.offsetWidth / 2,
-          behavior: 'smooth'
-        });
-      }
+// ESCUDO ANTI-CRASH
+class TabErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, errorMsg: '' };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, errorMsg: error.toString() };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-6 bg-red-900/20 border border-red-500/50 rounded-2xl text-center mt-10 animate-in fade-in">
+          <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+          <h2 className="text-red-400 font-black text-xl mb-2">Ops! Erro na Aba</h2>
+          <p className="text-sm text-slate-300 mb-4">Ocorreu um erro interno de renderização.</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="w-full bg-red-600 hover:bg-red-500 text-white py-3 rounded-xl font-bold shadow-lg shadow-red-600/30"
+          >
+            Recarregar Página
+          </button>
+        </div>
+      );
     }
-  }, [selectedDay]);
+    return this.props.children; 
+  }
+}
+
+export default function App() {
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  // --- FIREBASE ---
+  const [firebaseUser, setFirebaseUser] = useState(null);
+  const [syncStatus, setSyncStatus] = useState('offline');
+  const dbRef = useRef(null);
+  const syncTimeoutRef = useRef(null);
+
+  const getAppId = () => {
+    const rawId = typeof __app_id !== 'undefined' ? __app_id : 'default-app';
+    return rawId.replace(/\//g, '_'); 
+  };
 
   useEffect(() => {
+    const vercelFirebaseConfig = { apiKey: "", authDomain: "", projectId: "", storageBucket: "", messagingSenderId: "", appId: "" };
+    let finalConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : vercelFirebaseConfig;
+    if (!finalConfig.apiKey) return;
+
+    const app = initializeApp(finalConfig);
+    const auth = getAuth(app);
+    dbRef.current = getFirestore(app);
+
     const initAuth = async () => {
       try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
-      } catch (e) {
-        console.error("Erro auth:", e);
-      }
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) await signInWithCustomToken(auth, __initial_auth_token);
+        else await signInAnonymously(auth);
+      } catch (e) { }
     };
     initAuth();
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => { setUser(currentUser); setLoadingAuth(false); });
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setFirebaseUser(user);
+      if (user) { setSyncStatus('online'); loadDataFromCloud(user); }
+    });
     return () => unsubscribe();
   }, []);
 
-  useEffect(() => {
-    if (!user || !syncCode) return;
-    setLoadingData(true);
-    setErrorMsg(null);
-    
-    const tasksRef = collection(db, 'artifacts', appId, 'public', 'data', `tasks_${syncCode}`);
-    const statsRef = doc(db, 'artifacts', appId, 'public', 'data', `stats_${syncCode}`, 'main');
+  // =======================================================================
+  // CLEAN START: NOVAS "GAVETAS" (v3) PARA LIMPAR QUALQUER CORRUPÇÃO ANTIGA
+  // =======================================================================
+  const [tasksRaw, setTasks] = useLocalStorage('planner_v3_tasks', []);
+  const [taskCategoriesRaw, setTaskCategories] = useLocalStorage('planner_v3_categories', INITIAL_CATEGORIES);
+  const [habitsListRaw, setHabitsList] = useLocalStorage('planner_v3_habitsList', INITIAL_HABITS_LIST);
+  const [habits, setHabits] = useLocalStorage('planner_v3_habits', {});
+  const [dailyTasks, setDailyTasks] = useLocalStorage('planner_v3_dailyTasks', {}); 
+  const [portfolioCategoriesRaw, setPortfolioCategories] = useLocalStorage('planner_v3_portfolioCats', INITIAL_PORTFOLIO_CATEGORIES);
+  const [portfolioUpdateDate, setPortfolioUpdateDate] = useLocalStorage('planner_v3_portfolioDate', new Date().toISOString().split('T')[0]);
+  const [prevPortfolioBalance, setPrevPortfolioBalance] = useLocalStorage('planner_v3_prevBalance', '');
+  const [portfolio, setPortfolio] = useLocalStorage('planner_v3_portfolio', {});
 
-    const unsubscribeTasks = onSnapshot(query(tasksRef), async (snapshot) => {
-      if (snapshot.empty) {
-        const defaultTasks = generateDefaultTasks();
-        for (const task of defaultTasks) {
-          try { await setDoc(doc(db, 'artifacts', appId, 'public', 'data', `tasks_${syncCode}`, task.id), task); } catch(e){}
-        }
-      } else {
-        const loadedTasks = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-        loadedTasks.sort((a, b) => String(a.time).localeCompare(String(b.time)));
-        setTasks(loadedTasks);
-      }
-      setLoadingData(false);
-    }, (error) => {
-        console.error(error);
-        if (error.code === 'permission-denied') {
-          setErrorMsg("O Firebase bloqueou o acesso. Altere as Regras do Firestore para: allow read, write: if true;");
-        }
-        setLoadingData(false);
-    });
-
-    const unsubscribeStats = onSnapshot(statsRef, (docSnap) => {
-      if (docSnap.exists()) {
-        setStats({ totalStars: Number(docSnap.data().totalStars || 0) });
-      } else {
-        setDoc(statsRef, { totalStars: 0 });
-      }
-    }, (error) => console.error(error));
-
-    return () => { unsubscribeTasks(); unsubscribeStats(); };
-  }, [user, syncCode]);
-
-  useEffect(() => {
-    if (!alarmsEnabled || tasks.length === 0) return;
-    const targetTime = `${String(currentTime.getHours()).padStart(2, '0')}:${String(currentTime.getMinutes()).padStart(2, '0')}`;
-    const currentDayMap = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
-    const todayStr = currentDayMap[currentTime.getDay()];
-    
-    const currentTask = tasks.find(t => t.day === todayStr && t.time === targetTime && !t.completed);
-    if (currentTask && lastAlertTime !== `${currentTask.id}-${targetTime}`) {
-      playTikTokSound();
-      setLastAlertTime(`${currentTask.id}-${targetTime}`);
-    }
-  }, [currentTime, alarmsEnabled, tasks, lastAlertTime]);
-
-  useEffect(() => {
-    const currentStars = Number(stats.totalStars || 0);
-    if (prevStars.current !== -1 && prevStars.current < 500 && currentStars >= 500) {
-      setShowRobuxReward(true);
-      playTikTokSound(); 
-    }
-    prevStars.current = currentStars;
-  }, [stats.totalStars]);
-
-  const toggleAlarm = () => {
-    const newState = !alarmsEnabled;
-    setAlarmsEnabled(newState);
-    if(newState) {
-      initAudio(); playTikTokSound(); 
-    }
-  };
-
-  const handleCreateNewSync = () => {
-    const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-    try { localStorage.setItem('paula_sync_code', newCode); } catch (e) {}
-    setSyncCode(newCode);
-  };
-
-  const handleJoinSync = (e) => {
-    e.preventDefault();
-    if (!joinCodeInput.trim()) return;
-    const code = joinCodeInput.trim().toUpperCase();
-    try { localStorage.setItem('paula_sync_code', code); } catch (e) {}
-    setSyncCode(code);
-  };
-
-  const toggleTask = async (task) => {
-    if (!user || !syncCode) return;
-    const taskRef = doc(db, 'artifacts', appId, 'public', 'data', `tasks_${syncCode}`, task.id);
-    const statsRef = doc(db, 'artifacts', appId, 'public', 'data', `stats_${syncCode}`, 'main');
-    const newStatus = !task.completed;
-    
-    const actualPoints = Number(task.points || TASK_TYPES[task.type]?.points || 10);
-    const pointsChange = newStatus ? actualPoints : -actualPoints;
-    const newTotal = Math.max(0, Number(stats.totalStars || 0) + pointsChange);
-    
-    try { 
-      await updateDoc(taskRef, { completed: newStatus }); 
-      await setDoc(statsRef, { totalStars: newTotal }, { merge: true }); 
-    } catch (e) { console.error(e) }
-  };
-
-  const saveTask = async (e) => {
-    e.preventDefault();
-    if (!user || !syncCode || !newTime || !newTitle) return;
-    const taskPoints = Number(TASK_TYPES[newType]?.points || 10);
-    const taskData = { day: selectedDay, time: newTime, title: newTitle, type: newType, points: taskPoints, completed: false };
-    const collectionName = `tasks_${syncCode}`;
-    if (editingTaskId) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', collectionName, editingTaskId), taskData);
-    else { const newId = generateSafeId(); await setDoc(doc(db, 'artifacts', appId, 'public', 'data', collectionName, newId), { ...taskData, id: newId }); }
-    closeForm();
-  };
-
-  const confirmDelete = async () => {
-    if (!user || !syncCode || !taskToDelete) return;
-    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', `tasks_${syncCode}`, taskToDelete.id));
-    setTaskToDelete(null);
-  };
-
-  const closeForm = () => { 
-    setShowForm(false); 
-    setEditingTaskId(null); 
-    setNewTime(''); 
-    setNewTitle(''); 
-    setNewType('study'); 
-  };
+  // Garantia Absoluta que os Arrays só contêm Objetos Válidos com IDs
+  const tasks = (Array.isArray(tasksRaw) ? tasksRaw : []).filter(t => t && typeof t === 'object' && t.id);
+  const taskCategories = (Array.isArray(taskCategoriesRaw) ? taskCategoriesRaw : INITIAL_CATEGORIES).filter(c => c && typeof c === 'object' && c.id);
+  const habitsList = (Array.isArray(habitsListRaw) ? habitsListRaw : INITIAL_HABITS_LIST).filter(h => h && typeof h === 'object' && h.id);
+  const portfolioCategories = (Array.isArray(portfolioCategoriesRaw) ? portfolioCategoriesRaw : INITIAL_PORTFOLIO_CATEGORIES).filter(c => c && typeof c === 'object' && c.id);
   
-  const copyCode = () => { navigator.clipboard.writeText(syncCode); setShowCopied(true); setTimeout(() => setShowCopied(false), 2000); };
-  const handleLogout = () => { try { localStorage.removeItem('paula_sync_code'); } catch (e) {} setSyncCode(null); setTasks([]); };
+  // Garantia Absoluta de Objetos
+  const safeHabits = typeof habits === 'object' && habits !== null && !Array.isArray(habits) ? habits : {};
+  const safeDailyTasks = typeof dailyTasks === 'object' && dailyTasks !== null && !Array.isArray(dailyTasks) ? dailyTasks : {};
+  const safePortfolio = typeof portfolio === 'object' && portfolio !== null && !Array.isArray(portfolio) ? portfolio : {};
 
-  if (loadingAuth) return <div className="h-screen w-full bg-slate-950 flex items-center justify-center text-pink-400"><Zap className="animate-pulse w-12 h-12" /></div>;
+  // UI States
+  const [isEditingCategories, setIsEditingCategories] = useState(false);
+  const [newCategoryLabel, setNewCategoryLabel] = useState('');
+  const [showAddTask, setShowAddTask] = useState(false);
+  const [editingTaskId, setEditingTaskId] = useState(null);
+  const [newTask, setNewTask] = useState({ title: '', category: 'meta', dueDate: '', dueTime: '', hasReminder: false, recurrence: 'none' });
+  const [showAddHabit, setShowAddHabit] = useState(false);
+  const [newHabitLabel, setNewHabitLabel] = useState('');
+  const [newDailyTask, setNewDailyTask] = useState('');
+  const [selectedDate, setSelectedDate] = useState(new Date()); 
+  const [isEditingPortfolioCats, setIsEditingPortfolioCats] = useState(false);
+  const [newPortfolioCatLabel, setNewPortfolioCatLabel] = useState('');
+  const [deletePrompt, setDeletePrompt] = useState(null); 
+  const [editPrompt, setEditPrompt] = useState(null); 
 
-  if (errorMsg) {
-    return (
-      <div className="h-screen bg-slate-950 flex flex-col items-center justify-center p-8 text-center text-white">
-        <AlertTriangle size={64} className="text-rose-500 mb-6 animate-pulse" />
-        <h2 className="text-2xl font-black mb-4 uppercase tracking-tighter">Acesso Bloqueado</h2>
-        <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 text-left text-sm space-y-4 max-w-md">
-          <p className="text-slate-300 font-medium">{errorMsg}</p>
-        </div>
-        <button onClick={() => window.location.reload()} className="mt-8 bg-cyan-600 px-10 py-4 rounded-full font-black uppercase tracking-widest hover:bg-cyan-500 transition-colors">Recarregar</button>
-      </div>
-    );
-  }
+  // --- SINCRONIZAÇÃO NUVEM COM NOVO DOCUMENTO (v3_main) ---
+  const loadDataFromCloud = async (user) => {
+    if (!dbRef.current || !user) return;
+    setSyncStatus('syncing');
+    try {
+      // Documento novo na nuvem para não cruzar com os dados antigos
+      const docPath = doc(dbRef.current, 'artifacts', getAppId(), 'users', user.uid, 'plannerData', 'v3_main');
+      const snapshot = await getDoc(docPath);
+      if (snapshot.exists()) {
+        const d = snapshot.data();
+        if (d.tasks && Array.isArray(d.tasks)) setTasks(d.tasks);
+        if (d.taskCategories && Array.isArray(d.taskCategories)) setTaskCategories(d.taskCategories);
+        if (d.habitsList && Array.isArray(d.habitsList)) setHabitsList(d.habitsList);
+        if (d.habits) setHabits(d.habits);
+        if (d.dailyTasks) setDailyTasks(d.dailyTasks);
+        if (d.portfolioCategories && Array.isArray(d.portfolioCategories)) setPortfolioCategories(d.portfolioCategories);
+        if (d.portfolio) setPortfolio(d.portfolio);
+        if (d.portfolioUpdateDate) setPortfolioUpdateDate(d.portfolioUpdateDate);
+        if (d.prevPortfolioBalance) setPrevPortfolioBalance(d.prevPortfolioBalance);
+      }
+      setSyncStatus('online');
+    } catch (error) { setSyncStatus('offline'); }
+  };
 
-  if (!syncCode) {
-    return (
-      <div className="h-screen w-full overflow-y-auto bg-slate-950 flex flex-col items-center justify-center p-6 text-slate-200 font-sans">
-        <div className="w-24 h-24 mb-6 rounded-3xl bg-gradient-to-tr from-pink-500 to-cyan-500 flex items-center justify-center shadow-[0_0_40px_rgba(236,72,153,0.5)] animate-pulse">
-           <Star size={48} fill="white" className="text-white" />
-        </div>
-        <h1 className="text-5xl font-black mb-2 bg-gradient-to-r from-pink-400 via-purple-400 to-cyan-400 text-transparent bg-clip-text text-center italic">PAULA 💖</h1>
-        <p className="text-slate-500 text-center max-w-sm mb-12 font-black uppercase tracking-widest text-xs">Agenda Inteligente Nativa</p>
+  useEffect(() => {
+    if (!firebaseUser || !dbRef.current) return;
+    clearTimeout(syncTimeoutRef.current);
+    syncTimeoutRef.current = setTimeout(async () => {
+      setSyncStatus('syncing');
+      try {
+        const docPath = doc(dbRef.current, 'artifacts', getAppId(), 'users', firebaseUser.uid, 'plannerData', 'v3_main');
+        await setDoc(docPath, {
+          tasks, taskCategories, habitsList, habits, dailyTasks, portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance, lastUpdated: new Date().toISOString()
+        }, { merge: true });
+        setSyncStatus('online');
+      } catch (error) { setSyncStatus('offline'); }
+    }, 2000);
+  }, [tasks, taskCategories, habitsList, habits, dailyTasks, portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance, firebaseUser]);
 
-        {!isJoining ? (
-          <div className="w-full max-w-sm space-y-4">
-            <button onClick={handleCreateNewSync} className="w-full bg-gradient-to-r from-pink-600 to-purple-600 text-white font-black text-xl py-5 rounded-3xl shadow-[0_0_15px_rgba(236,72,153,0.4)] active:scale-95 transition-transform flex items-center justify-center gap-2 border-b-4 border-pink-800"><Plus size={24} strokeWidth={3}/> CRIAR AGENDA</button>
-            <button onClick={() => setIsJoining(true)} className="w-full bg-slate-900 border-2 border-slate-800 text-slate-300 font-black text-xl py-5 rounded-3xl active:scale-95 transition-transform flex items-center justify-center gap-2"><Smartphone size={24} /> LIGAR CÓDIGO</button>
-          </div>
-        ) : (
-          <form onSubmit={handleJoinSync} className="w-full max-w-sm space-y-4 animate-in fade-in">
-            <div className="bg-slate-900 border-2 border-cyan-500/50 rounded-[32px] p-8 shadow-2xl">
-              <label className="block text-xs font-black text-cyan-400 mb-4 uppercase tracking-widest text-center">Código da Paula</label>
-              <input type="text" value={joinCodeInput} onChange={e => setJoinCodeInput(e.target.value)} placeholder="A7X9K" className="w-full bg-slate-950 border-2 border-slate-800 rounded-2xl p-4 text-center text-4xl font-black text-white uppercase focus:outline-none focus:border-pink-500 font-mono" maxLength={8} required />
-            </div>
-            <button type="submit" className="w-full bg-cyan-600 text-slate-950 font-black text-xl py-5 rounded-3xl shadow-[0_0_15px_rgba(34,211,238,0.4)] active:scale-95 transition-transform uppercase tracking-widest">Entrar</button>
-            <button type="button" onClick={() => setIsJoining(false)} className="w-full text-slate-500 font-bold py-4 uppercase tracking-widest text-[10px]">Voltar</button>
-          </form>
-        )}
-      </div>
-    );
-  }
+  // --- CONFIGURAÇÃO PWA NATIVA ---
+  useEffect(() => {
+    document.title = "Planner Full";
+    const metaTags = [
+      { name: "apple-mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
+      { name: "apple-mobile-web-app-title", content: "Planner Full" },
+      { name: "theme-color", content: "#0f172a" },
+      { name: "mobile-web-app-capable", content: "yes" }
+    ];
 
-  const currentTasks = tasks.filter(t => t.day === selectedDay);
-  const completedToday = currentTasks.filter(t => t.completed).length;
-  const totalToday = currentTasks.length;
-  const progress = totalToday === 0 ? 0 : (completedToday / totalToday) * 100;
+    metaTags.forEach(({ name, content }) => {
+      let tag = document.querySelector(`meta[name="${name}"]`);
+      if (!tag) {
+        tag = document.createElement('meta');
+        tag.name = name;
+        document.head.appendChild(tag);
+      }
+      tag.content = content;
+    });
+  }, []);
 
-  return (
-    <div className="h-screen w-full flex flex-col bg-slate-950 text-slate-200 font-sans overflow-hidden">
-      
-      {/* HEADER FIXO V4.0 + RELÓGIO */}
-      <header className="flex-shrink-0 bg-slate-900/90 backdrop-blur-xl border-b border-slate-800 z-20 pt-safe flex flex-col shadow-2xl">
-        <div className="px-4 py-5 flex flex-col gap-4">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center gap-2 text-slate-600 font-mono text-[10px] font-black uppercase tracking-tighter">
-              <Key size={12} /> {syncCode}
-              <button onClick={copyCode} className="hover:text-cyan-400 p-1 bg-slate-800 rounded transition-colors">{showCopied ? <Check size={12}/> : <Copy size={12}/>}</button>
-            </div>
-            
-            {/* RELÓGIO CENTRALIZADO E LUMINOSO */}
-            <div className="flex items-center gap-2 bg-slate-950 px-6 py-2 rounded-full border-2 border-cyan-500/40 text-cyan-400 font-black text-2xl shadow-[0_0_20px_rgba(6,182,212,0.3)] font-mono tracking-tighter">
-              <Clock size={20} />
-              {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </div>
-
-            <div className="flex items-center gap-1 bg-slate-800 px-4 py-2 rounded-2xl text-yellow-400 font-black border border-yellow-500/20 shadow-inner">
-              <Star size={18} fill="currentColor"/> {Number(stats.totalStars || 0)}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between gap-3 overflow-x-auto no-scrollbar px-4 pb-4">
-          <div className="flex gap-2" ref={daysContainerRef}>
-            {DAYS.map(day => (
-              <button 
-                key={day.id} 
-                id={`day-btn-${day.id}`} 
-                onClick={() => setSelectedDay(day.id)} 
-                className={`flex-shrink-0 px-8 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all duration-300 
-                  ${selectedDay === day.id 
-                    ? 'bg-pink-500 text-white shadow-[0_0_20px_rgba(236,72,153,0.4)] scale-105' 
-                    : 'bg-slate-800 text-slate-500'}`}
-              >
-                {day.label}
-              </button>
-            ))}
-          </div>
-          <button onClick={() => { if(window.confirm("Pretende sair desta agenda?")) handleLogout(); }} className="p-4 bg-slate-800/50 rounded-2xl text-rose-500 active:bg-rose-500 active:text-white transition-all"><LogOut size={18} /></button>
-        </div>
-        <div className="h-1 w-full bg-slate-800">
-          <div className="h-full bg-gradient-to-r from-cyan-400 via-purple-500 to-pink-500 transition-all duration-500" style={{ width: `${progress}%` }} />
-        </div>
-      </header>
-
-      {/* ÁREA DE SCROLL */}
-      <main className="flex-1 overflow-y-auto p-4 pb-32 no-scrollbar bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-slate-900/50 via-slate-950 to-slate-950">
+  // --- MOTOR DE LEMBRETES (NOTIFICAÇÕES 1H e 1D antes) ---
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = new Date();
+      let updatedTasks = false;
+      const newTasks = tasks.map(task => {
+        if (!task || task.completed || !task.hasReminder || !task.dueDate || !task.dueTime) return task;
         
-        {loadingData ? (
-           <div className="h-full flex items-center justify-center text-cyan-400"><Zap className="animate-pulse w-12 h-12" /></div>
-        ) : currentTasks.length === 0 ? (
-          <div className="text-center py-24 opacity-20 animate-in fade-in">
-            <CalendarDays className="mx-auto mb-4" size={64} />
-            <p className="font-black uppercase tracking-widest text-xs italic">Sem Missões Hoje</p>
+        try {
+          const [y, m, d] = task.dueDate.split('-');
+          const [h, min] = task.dueTime.split(':');
+          const taskDateTime = new Date(y, m-1, d, h, min);
+          const diffMs = taskDateTime - now;
+          const diffHours = diffMs / (1000 * 60 * 60);
+
+          let t = { ...task };
+          if (diffHours <= 24 && diffHours > 23 && !t.notif1d) {
+            sendNativeNotification("Foco do Dia Amanhã", `Meta: ${typeof task.title === 'string' ? task.title : 'Tarefa'}`);
+            t.notif1d = true;
+            updatedTasks = true;
+          }
+          if (diffHours <= 1 && diffHours > 0 && !t.notif1h) {
+            sendNativeNotification("Atenção - Lembrete", `A meta "${typeof task.title === 'string' ? task.title : 'Tarefa'}" vence em 1 hora!`);
+            t.notif1h = true;
+            updatedTasks = true;
+          }
+          return t;
+        } catch(e) { return task; }
+      });
+
+      if (updatedTasks) setTasks(newTasks);
+    }, 60000); 
+
+    return () => clearInterval(interval);
+  }, [tasks]);
+
+  // --- DATAS E ORDENAÇÃO SEGURAS ---
+  const todayObj = new Date(); 
+  todayObj.setHours(0, 0, 0, 0);
+  const todayStr = new Date(todayObj.getTime() - (todayObj.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+
+  const getTaskStatus = (dueDateStr, completed) => {
+    if (completed) return 'completed';
+    const dueDate = parseLocalDate(dueDateStr);
+    const diffTime = Math.ceil((dueDate - todayObj) / (1000 * 60 * 60 * 24));
+    
+    if (diffTime < 0) return 'overdue';
+    if (diffTime === 0) return 'today';
+    if (diffTime <= 3) return 'upcoming-urgent'; 
+    if (diffTime <= 7) return 'upcoming';      
+    return 'normal';
+  };
+
+  const getStatusColors = (status) => {
+    const dict = {
+      'overdue': 'border-red-500/50 bg-[#2a1616] text-red-400',
+      'today': 'border-blue-500/40 bg-blue-500/10 text-blue-400',
+      'upcoming-urgent': 'border-yellow-500/40 bg-[#2a2411] text-yellow-400',
+      'upcoming': 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400',
+      'normal': 'border-slate-700 bg-slate-800 text-slate-300',
+      'completed': 'border-slate-800 bg-slate-900 opacity-60 text-slate-500 line-through'
+    };
+    return dict[status] || dict['normal'];
+  };
+
+  const sortedTasksGlobally = useMemo(() => {
+    return [...tasks].sort((a, b) => {
+      // Impede NaN na ordenação (Safari odeia NaN)
+      if (a?.completed !== b?.completed) return a?.completed ? 1 : -1;
+      if (a?.order !== undefined && b?.order !== undefined && a?.order !== b?.order) return a.order - b.order;
+      
+      const dateA = parseLocalDate(a?.dueDate).getTime();
+      const dateB = parseLocalDate(b?.dueDate).getTime();
+      if (isNaN(dateA) && isNaN(dateB)) return 0;
+      if (isNaN(dateA)) return 1;
+      if (isNaN(dateB)) return -1;
+      
+      return dateA - dateB;
+    });
+  }, [tasks]);
+
+  const focusOfDayTasks = sortedTasksGlobally.filter(task => {
+    if (!task || typeof task !== 'object') return false;
+    const status = getTaskStatus(task.dueDate, task.completed);
+    return status === 'overdue' || status === 'today' || (task.completed && parseLocalDate(task.dueDate).getTime() <= todayObj.getTime());
+  });
+
+  const upcomingTasks = sortedTasksGlobally.filter(task => {
+    if (!task || typeof task !== 'object') return false;
+    const status = getTaskStatus(task.dueDate, task.completed);
+    return status === 'upcoming-urgent' || status === 'upcoming' || status === 'normal';
+  });
+
+  const dayTasksForDashboard = Array.isArray(safeDailyTasks[todayStr]) ? safeDailyTasks[todayStr] : [];
+  const hasUrgentTasks = focusOfDayTasks.some(t => t && !t.completed) || dayTasksForDashboard.some(t => t && !t.completed);
+
+  // --- DRAG AND DROP ---
+  const draggingId = useRef(null);
+
+  const handleDragStart = (e, id) => {
+    e.stopPropagation();
+    draggingId.current = id;
+    hapticFeedback(20);
+  };
+
+  const handleDragMove = (e) => {
+    if (!draggingId.current) return;
+    e.preventDefault(); 
+    const clientX = e?.type?.includes('mouse') ? e.clientX : (e?.touches?.[0]?.clientX || 0);
+    const clientY = e?.type?.includes('mouse') ? e.clientY : (e?.touches?.[0]?.clientY || 0);
+
+    const targetElement = document.elementFromPoint(clientX, clientY);
+    const dropZone = targetElement?.closest('[data-drag-id]');
+
+    if (dropZone && dropZone.dataset.dragId !== String(draggingId.current)) {
+      const targetId = Number(dropZone.dataset.dragId);
+      
+      setTasks(prev => {
+        const arr = [...prev];
+        const idx1 = arr.findIndex(t => t && t.id === draggingId.current);
+        const idx2 = arr.findIndex(t => t && t.id === targetId);
+        
+        if (idx1 >= 0 && idx2 >= 0) {
+          const temp = arr[idx1];
+          arr.splice(idx1, 1);
+          arr.splice(idx2, 0, temp);
+          arr.forEach((t, i) => { if (t) t.order = i; });
+        }
+        return arr;
+      });
+      hapticFeedback(15);
+    }
+  };
+
+  const handleDragEnd = (e) => {
+    e.stopPropagation();
+    if (draggingId.current) hapticFeedback(20);
+    draggingId.current = null;
+  };
+
+  // --- CÁLCULOS PATRIMÓNIO ---
+  const currentPortfolioTotal = portfolioCategories.reduce((acc, cat) => acc + parseCurrencyToNumber(safePortfolio[cat?.id]), 0);
+  const portfolioDifference = currentPortfolioTotal - parseCurrencyToNumber(prevPortfolioBalance);
+  const isPortfolioPositive = portfolioDifference >= 0;
+
+  // --- HANDLERS ---
+  const confirmDelete = () => {
+    hapticFeedback([50, 100]); 
+    if (!deletePrompt) return;
+    if (deletePrompt.type === 'task') setTasks(tasks.filter(t => t?.id !== deletePrompt.id));
+    else if (deletePrompt.type === 'habit') setHabitsList(habitsList.filter(h => h?.id !== deletePrompt.id));
+    else if (deletePrompt.type === 'category') setTaskCategories(taskCategories.filter(c => c?.id !== deletePrompt.id));
+    else if (deletePrompt.type === 'portfolioCat') setPortfolioCategories(portfolioCategories.filter(c => c?.id !== deletePrompt.id));
+    else if (deletePrompt.type === 'dailyTask') {
+      const currentList = safeDailyTasks[deletePrompt.dateStr] || [];
+      setDailyTasks(prev => ({...prev, [deletePrompt.dateStr]: currentList.filter(t => t?.id !== deletePrompt.id)}));
+    }
+    setDeletePrompt(null);
+  };
+
+  const handleSaveSimpleEdit = (e) => {
+    e.preventDefault();
+    hapticFeedback(30);
+    if (!editPrompt || typeof editPrompt.label !== 'string' || !editPrompt.label.trim()) return;
+    if (editPrompt.type === 'habit') setHabitsList(habitsList.map(h => h?.id === editPrompt.id ? { ...h, label: editPrompt.label } : h));
+    else if (editPrompt.type === 'category') setTaskCategories(taskCategories.map(c => c?.id === editPrompt.id ? { ...c, label: editPrompt.label } : c));
+    else if (editPrompt.type === 'portfolioCat') setPortfolioCategories(portfolioCategories.map(c => c?.id === editPrompt.id ? { ...c, label: editPrompt.label } : c));
+    setEditPrompt(null);
+  };
+
+  const getDeleteTypeLabel = (type) => {
+    const dict = { 'task': 'a tarefa', 'habit': 'o hábito', 'category': 'a categoria', 'portfolioCat': 'o investimento', 'dailyTask': 'o compromisso' };
+    return dict[type] || 'o item';
+  };
+
+  const calculateNextDate = (dateStr, recurrence) => {
+    const d = parseLocalDate(dateStr); 
+    if (recurrence === 'daily') d.setDate(d.getDate() + 1);
+    if (recurrence === 'weekly') d.setDate(d.getDate() + 7);
+    if (recurrence === 'monthly') d.setMonth(d.getMonth() + 1);
+    if (recurrence === 'yearly') d.setFullYear(d.getFullYear() + 1);
+    return d.toISOString().split('T')[0];
+  };
+
+  const toggleTask = (id) => {
+    hapticFeedback([50, 30]); 
+    const task = tasks.find(t => t?.id === id);
+    if (!task) return;
+    
+    if (!task.completed && task.recurrence && task.recurrence !== 'none') {
+       const nextDate = calculateNextDate(task.dueDate, task.recurrence);
+       const nextTask = { ...task, id: Date.now(), dueDate: nextDate, completed: false, order: Date.now(), notif1d: false, notif1h: false };
+       const updatedCurrent = { ...task, completed: true, recurrence: 'none' };
+       setTasks(prev => prev.map(t => t?.id === id ? updatedCurrent : t).concat(nextTask));
+    } else {
+       setTasks(prev => prev.map(t => t?.id === id ? { ...t, completed: !t.completed } : t));
+    }
+  };
+
+  const handleSaveTask = (e) => {
+    e.preventDefault();
+    hapticFeedback(40);
+    requestNotificationPermission(); 
+    if (!newTask.title || !newTask.dueDate || !newTask.category) return;
+    
+    if (editingTaskId) setTasks(tasks.map(t => t?.id === editingTaskId ? { ...t, ...newTask } : t));
+    else setTasks([...tasks, { ...newTask, id: Date.now(), completed: false, order: Date.now(), notif1d: false, notif1h: false }]);
+    
+    setNewTask({ title: '', category: taskCategories[0]?.id || 'meta', dueDate: '', dueTime: '', hasReminder: false, recurrence: 'none' });
+    setShowAddTask(false);
+    setEditingTaskId(null);
+  };
+
+  const startEditTask = (task) => {
+    if(!task) return;
+    hapticFeedback(20);
+    setNewTask({ 
+      title: typeof task.title === 'string' ? task.title : '', 
+      category: typeof task.category === 'string' ? task.category : '', 
+      dueDate: typeof task.dueDate === 'string' ? task.dueDate : '', 
+      dueTime: typeof task.dueTime === 'string' ? task.dueTime : '', 
+      hasReminder: !!task.hasReminder, 
+      recurrence: typeof task.recurrence === 'string' ? task.recurrence : 'none' 
+    });
+    setEditingTaskId(task.id);
+    setShowAddTask(true);
+  };
+
+  const cancelEditTask = () => {
+    hapticFeedback(20);
+    setNewTask({ title: '', category: taskCategories[0]?.id || 'meta', dueDate: '', dueTime: '', hasReminder: false, recurrence: 'none' });
+    setEditingTaskId(null);
+    setShowAddTask(false);
+    setIsEditingCategories(false);
+  };
+
+  const handleAddCategory = () => {
+    hapticFeedback(30);
+    if (!newCategoryLabel || typeof newCategoryLabel !== 'string' || !newCategoryLabel.trim()) return;
+    const newId = newCategoryLabel.trim().toLowerCase().replace(/[^a-z0-9]/g, '_'); // Correção Segura de ID
+    if (!taskCategories.some(c => c?.id === newId)) {
+      setTaskCategories([...taskCategories, { id: newId || `cat_${Date.now()}`, label: newCategoryLabel.trim() }]);
+    }
+    setNewCategoryLabel('');
+  };
+
+  const handleAddHabit = (e) => {
+    e.preventDefault();
+    hapticFeedback(30);
+    if (!newHabitLabel.trim()) return;
+    setHabitsList([...habitsList, { id: `habit_${Date.now()}`, label: newHabitLabel.trim() }]);
+    setNewHabitLabel('');
+    setShowAddHabit(false);
+  };
+
+  const toggleHabit = (dateStr, habitId) => {
+    hapticFeedback(40);
+    setHabits(prev => {
+      const prevSaf = prev || {};
+      return { ...prevSaf, [dateStr]: { ...(prevSaf[dateStr] || {}), [habitId]: !(prevSaf[dateStr]?.[habitId]) } };
+    });
+  };
+
+  const handleAddDailyTask = (e) => {
+    e.preventDefault();
+    hapticFeedback(30);
+    if (!newDailyTask.trim()) return;
+    const dateStr = selectedDate.toISOString().split('T')[0];
+    const newTaskObj = { id: Date.now(), text: newDailyTask.trim(), completed: false };
+    setDailyTasks(prev => ({ ...prev, [dateStr]: [...((prev || {})[dateStr] || []), newTaskObj] }));
+    setNewDailyTask('');
+  };
+
+  const toggleDailyTask = (dateStr, taskId) => {
+    hapticFeedback([40, 20]);
+    setDailyTasks(prev => {
+      const dayList = (prev || {})[dateStr] || [];
+      return { ...prev, [dateStr]: dayList.map(t => t?.id === taskId ? { ...t, completed: !t.completed } : t) };
+    });
+  };
+
+  const handleAddPortfolioCategory = () => {
+    hapticFeedback(30);
+    if (!newPortfolioCatLabel.trim()) return;
+    const newId = newPortfolioCatLabel.trim().toLowerCase().replace(/[^a-z0-9]/g, '_');
+    if (!portfolioCategories.some(c => c?.id === newId)) {
+      setPortfolioCategories([...portfolioCategories, { id: newId || `port_${Date.now()}`, label: newPortfolioCatLabel.trim() }]);
+    }
+    setNewPortfolioCatLabel('');
+  };
+
+  const handlePortfolioChange = (id, value) => {
+    const formatted = formatCurrencyInput(value);
+    setPortfolio(prev => ({ ...prev, [id]: formatted }));
+  };
+
+  const handlePrevBalanceChange = (value) => {
+    const formatted = formatCurrencyInput(value);
+    setPrevPortfolioBalance(formatted);
+  };
+
+  const changeTab = (tabId) => {
+    if (activeTab !== tabId) {
+      hapticFeedback(25);
+      setActiveTab(tabId);
+    }
+  };
+
+  // ==========================================
+  // RENDERIZAÇÃO BLINDADA COM TRY/CATCH INTERNO
+  // ==========================================
+  
+  const renderDashboard = () => {
+    try {
+      return (
+        <div className="animate-in fade-in pb-6 relative space-y-8">
+          <div className="bg-slate-800 p-5 rounded-2xl border border-emerald-500/40 shadow-[0_15px_40px_-10px_rgba(16,185,129,0.25)] relative overflow-hidden">
+            <div className="absolute top-0 right-0 -mr-6 -mt-6 w-32 h-32 bg-emerald-500/20 rounded-full blur-2xl pointer-events-none"></div>
+            <div className="relative z-10 flex flex-col justify-center">
+              <p className="text-[11px] font-bold uppercase tracking-wider mb-1.5 text-emerald-400/90 flex items-center gap-1.5">
+                <Briefcase className="w-3.5 h-3.5"/> Total Investido
+              </p>
+              <p className="text-3xl sm:text-4xl font-bold font-mono tracking-tighter break-words text-white drop-shadow-md">
+                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(currentPortfolioTotal)}
+              </p>
+            </div>
           </div>
-        ) : (
-          currentTasks.map(task => (
-            <SwipeableTask key={task.id} task={task} onToggle={toggleTask} onEdit={handleEditRequest} onDeleteRequest={setTaskToDelete} />
-          ))
-        )}
 
-        {!showForm && (
-          <button onClick={() => setShowForm(true)} className="w-full mt-2 py-6 border-2 border-dashed border-slate-800 rounded-[35px] text-slate-600 font-black flex items-center justify-center gap-3 hover:border-cyan-500 hover:text-cyan-400 transition-all uppercase tracking-[0.2em] text-[12px]"><Plus size={24} /> Criar Missão</button>
-        )}
-      </main>
+          <div>
+            <h2 className="text-sm font-bold uppercase tracking-widest text-blue-400 mb-4 px-1 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" /> Foco do Dia
+            </h2>
+            {focusOfDayTasks.length === 0 && dayTasksForDashboard.length === 0 ? (
+               <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl text-center border-dashed">
+                 <p className="text-slate-400 font-medium text-sm">O seu foco do dia está limpo! ✨</p>
+               </div>
+            ) : (
+              <div className="space-y-2">
+                {focusOfDayTasks.map((task) => {
+                    if(!task) return null;
+                    const status = getTaskStatus(task.dueDate, task.completed);
+                    const classStr = getStatusColors(status);
+                    const safeTitle = task.title || 'Sem Título';
+                    return (
+                      <div key={task.id || Math.random()} data-drag-id={task.id} className="transition-transform duration-200 ease-in-out">
+                        <SwipeableItem onEdit={() => startEditTask(task)} onDeleteRequest={() => setDeletePrompt({ type: 'task', id: task.id, title: safeTitle })} frontClass={`${classStr} p-4 flex items-center gap-3`} wrapperClass="mb-0">
+                          <button onClick={() => toggleTask(task.id)} className={`w-6 h-6 rounded-md border flex items-center justify-center transition-all duration-300 shrink-0 active:scale-75 ${task.completed ? 'bg-blue-600 border-blue-600 shadow-[0_0_10px_rgba(59,130,246,0.5)]' : 'border-slate-500'}`}>
+                            {task.completed && <Check className="w-4 h-4 text-white" />}
+                          </button>
+                          <div className="flex-1 min-w-0 pointer-events-none">
+                            <h3 className={`font-bold text-sm truncate transition-colors ${task.completed ? 'line-through text-slate-500' : 'text-slate-100'}`}>{safeTitle}</h3>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className={`text-[10px] uppercase font-bold tracking-wider opacity-80`}>
+                                {status === 'overdue' ? 'Atrasada' : 'Hoje'} {task.dueTime ? `• ${task.dueTime}` : ''}
+                              </span>
+                              {task.hasReminder && !task.completed && <BellRing className={`w-3 h-3 ${status==='overdue' ? 'animate-pulse' : ''}`} />}
+                            </div>
+                          </div>
+                          {!task.completed && (
+                            <div className="p-2 -mr-2 cursor-grab active:cursor-grabbing opacity-50 hover:opacity-100" style={{ touchAction: 'none' }} onTouchStart={(e) => handleDragStart(e, task.id)} onTouchMove={handleDragMove} onTouchEnd={handleDragEnd} onMouseDown={(e) => handleDragStart(e, task.id)} onMouseMove={handleDragMove} onMouseUp={handleDragEnd} onMouseLeave={handleDragEnd}>
+                              <GripVertical className="w-5 h-5 pointer-events-none" />
+                            </div>
+                          )}
+                        </SwipeableItem>
+                      </div>
+                    );
+                })}
+                {dayTasksForDashboard.map(task => {
+                    if(!task) return null;
+                    const safeText = task.text || 'Compromisso';
+                    return (
+                    <SwipeableItem key={`rt_${task.id || Math.random()}`} onEdit={()=>{}} onDeleteRequest={() => setDeletePrompt({ type: 'dailyTask', id: task.id, title: safeText, dateStr: todayStr })} frontClass="bg-slate-800/80 border-slate-700/80 p-3.5 flex items-center justify-between" wrapperClass="mb-0" isDragDisabled>
+                      <label className="flex items-center gap-3 cursor-pointer flex-1 w-full">
+                        <div className="relative flex items-center justify-center w-6 h-6 shrink-0">
+                          <input type="checkbox" checked={!!task.completed} onChange={() => toggleDailyTask(todayStr, task.id)} className="peer sr-only"/>
+                          <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all duration-200 active:scale-75 ${task.completed ? 'bg-blue-500 border-blue-500' : 'border-slate-500'}`}>
+                            {task.completed && <Check className="w-3.5 h-3.5 text-white" />}
+                          </div>
+                        </div>
+                        <span className={`text-sm font-medium transition-colors ${task.completed ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{safeText}</span>
+                      </label>
+                    </SwipeableItem>
+                  )
+                })}
+              </div>
+            )}
+          </div>
 
-      <div className="fixed bottom-10 right-8 z-30">
-        <button onClick={toggleAlarm} className={`w-20 h-20 rounded-full flex items-center justify-center shadow-[0_15px_30px_rgba(0,0,0,0.5)] transition-all active:scale-90 ${alarmsEnabled ? 'bg-cyan-500 text-slate-950 scale-110 shadow-cyan-500/50' : 'bg-slate-800 text-slate-400'}`}>
-          {alarmsEnabled ? <Bell size={36} className="animate-bounce" /> : <BellOff size={36} />}
-        </button>
-      </div>
+          <div>
+            <h2 className="text-sm font-bold uppercase tracking-widest text-slate-400 mb-4 px-1 flex items-center gap-2">
+              <CalendarClock className="w-4 h-4" /> Próximos Dias
+            </h2>
+            {upcomingTasks.length > 0 ? (
+              <div className="space-y-2 opacity-95">
+                {upcomingTasks.map(task => {
+                    if(!task) return null;
+                    const status = getTaskStatus(task.dueDate, task.completed);
+                    const classStr = getStatusColors(status);
+                    const safeTitle = task.title || 'Sem Título';
+                    return (
+                      <SwipeableItem key={task.id || Math.random()} onEdit={() => startEditTask(task)} onDeleteRequest={() => setDeletePrompt({ type: 'task', id: task.id, title: safeTitle })} frontClass={`${classStr} p-4 flex items-center gap-3`} wrapperClass="mb-0">
+                        <button onClick={() => toggleTask(task.id)} className={`w-6 h-6 rounded-md border flex items-center justify-center transition-all duration-300 shrink-0 active:scale-75 ${task.completed ? 'bg-blue-600 border-blue-600' : 'border-slate-500'}`}>
+                          {task.completed && <Check className="w-4 h-4 text-white" />}
+                        </button>
+                        <div className="flex-1 min-w-0 pointer-events-none">
+                          <h3 className={`font-medium text-sm truncate transition-colors`}>{safeTitle}</h3>
+                          <p className="text-[11px] opacity-70 font-mono mt-0.5">
+                            {formatDateLocal(task.dueDate)} {task.dueTime ? `• ${task.dueTime}` : ''}
+                          </p>
+                        </div>
+                      </SwipeableItem>
+                    );
+                })}
+              </div>
+            ) : (
+               <p className="text-sm text-slate-500 italic px-2">Sem tarefas para os próximos dias.</p>
+            )}
+          </div>
+        </div>
+      );
+    } catch (error) {
+      return <div className="p-4 bg-red-900/50 text-red-200 rounded-xl">Erro Tela Início: {error.message}</div>;
+    }
+  };
 
-      {showForm && (
-        <div className="fixed inset-0 bg-black/95 backdrop-blur-md z-50 flex items-end">
-          <form onSubmit={saveTask} className="w-full bg-slate-900 rounded-t-[50px] p-12 space-y-8 border-t border-slate-800 animate-in slide-in-from-bottom-full duration-500">
-            <div className="flex justify-between items-center">
-              <h3 className="font-black text-3xl text-cyan-400 uppercase italic tracking-tighter">{editingTaskId ? 'Editar Missão' : 'Nova Missão'}</h3>
-              <button type="button" onClick={closeForm} className="bg-slate-800 p-3 rounded-full text-slate-400"><X size={24}/></button>
-            </div>
-            <div className="space-y-5">
-              <input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="w-full bg-slate-950 p-6 rounded-3xl border-2 border-slate-800 text-white font-black text-4xl focus:border-cyan-500 focus:outline-none font-mono" required />
-              <input type="text" value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="O que vamos fazer?" className="w-full bg-slate-950 p-6 rounded-3xl border-2 border-slate-800 text-white font-black text-2xl focus:border-pink-500 focus:outline-none tracking-tight" required />
-            </div>
-            <div className="grid grid-cols-4 gap-4">
-              {Object.entries(TASK_TYPES).map(([k,v]) => {
-                const IconComp = v.icon;
+  const renderTasks = () => {
+    try {
+      return (
+        <div className="space-y-6 animate-in fade-in pb-6">
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="text-2xl font-bold text-slate-100">Agenda Completa</h1>
+            <button onClick={() => { cancelEditTask(); setNewTask(prev => ({ ...prev, category: taskCategories[0]?.id || 'meta' })); setShowAddTask(true); hapticFeedback(30); }} className="bg-blue-600 hover:bg-blue-500 text-white p-2 rounded-full transition-colors shadow-lg shadow-blue-500/30 active:scale-95">
+              <Plus className="w-5 h-5" />
+            </button>
+          </div>
+
+          {showAddTask && (
+            <form onSubmit={handleSaveTask} className="bg-slate-800 p-5 rounded-2xl border border-slate-700 mb-6 space-y-5 shadow-lg">
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Título da Tarefa</label>
+                <input type="text" required className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:border-blue-500 focus:ring-1 outline-none transition-all" value={newTask.title} onChange={e => setNewTask({...newTask, title: e.target.value})} placeholder="Ex: Reunião de Equipa"/>
+              </div>
+              <div className="flex gap-4">
+                <div className="flex-1 min-w-0">
+                  <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Data</label>
+                  <input type="date" required className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:border-blue-500 outline-none color-scheme-dark transition-all" value={newTask.dueDate} onChange={e => setNewTask({...newTask, dueDate: e.target.value})}/>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Hora (Opcional)</label>
+                  <input type="time" className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:border-blue-500 outline-none color-scheme-dark transition-all" value={newTask.dueTime} onChange={e => setNewTask({...newTask, dueTime: e.target.value})}/>
+                </div>
+              </div>
+              
+              <div className="flex gap-4 items-end">
+                <div className="flex-1 min-w-0">
+                  <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Recorrência</label>
+                  <select className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:border-blue-500 outline-none appearance-none truncate transition-all" value={newTask.recurrence} onChange={e => setNewTask({...newTask, recurrence: e.target.value})}>
+                    <option value="none">Nenhuma</option>
+                    <option value="daily">Diária</option>
+                    <option value="weekly">Semanal</option>
+                    <option value="monthly">Mensal</option>
+                    <option value="yearly">Anual</option>
+                  </select>
+                </div>
+                
+                <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border transition-colors cursor-pointer ${newTask.hasReminder ? 'bg-blue-500/20 border-blue-500/50 text-blue-400' : 'bg-slate-900 border-slate-700 text-slate-400'}`}>
+                   <Volume2 className="w-4 h-4" />
+                   <span className="text-sm font-bold">Alerta</span>
+                   <input type="checkbox" className="sr-only" checked={newTask.hasReminder} onChange={e => setNewTask({...newTask, hasReminder: e.target.checked})}/>
+                </label>
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-3">
+                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider">Categoria</label>
+                  <button type="button" onClick={() => { hapticFeedback(20); setIsEditingCategories(!isEditingCategories); }} className="text-xs font-medium text-blue-400 bg-blue-500/10 px-2 py-1 rounded-md">{isEditingCategories ? 'Concluir' : 'Editar Lista'}</button>
+                </div>
+                {isEditingCategories ? (
+                  <div className="bg-slate-900 border border-slate-700 rounded-xl p-3 space-y-2">
+                    <div className="max-h-36 overflow-y-auto space-y-2 pr-1 hide-scrollbar">
+                      {taskCategories.map(cat => {
+                          if(!cat || !cat.id) return null;
+                          const safeLabel = cat.label || 'Sem Nome';
+                          return (
+                          <SwipeableItem key={cat.id} wrapperClass="mb-0" frontClass="p-2.5 bg-slate-800 border-slate-700 flex justify-between items-center" onEdit={() => setEditPrompt({ type: 'category', id: cat.id, label: safeLabel })} onDeleteRequest={() => setDeletePrompt({ type: 'category', id: cat.id, title: safeLabel })}>
+                            <span className="text-slate-200 truncate pr-2 font-medium w-full">{safeLabel}</span>
+                          </SwipeableItem>
+                        )
+                      })}
+                    </div>
+                    <div className="flex gap-2 mt-2 pt-2 border-t border-slate-700/50">
+                      <input type="text" value={newCategoryLabel} onChange={e => setNewCategoryLabel(e.target.value)} className="flex-1 bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-sm text-white" placeholder="Nova..." />
+                      <button type="button" onClick={handleAddCategory} className="bg-blue-600 text-white px-4 rounded-lg text-sm font-medium">Adicionar</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex gap-3 overflow-x-auto pb-4 hide-scrollbar -mx-2 px-2 snap-x snap-mandatory">
+                    {taskCategories.map(cat => {
+                        if(!cat || !cat.id) return null;
+                        const isSelected = newTask.category === cat.id;
+                        return (
+                          <button key={cat.id} type="button" onClick={() => { hapticFeedback(40); setNewTask({...newTask, category: cat.id}); }} className={`relative snap-center shrink-0 px-6 py-3.5 rounded-2xl text-sm font-bold transition-all duration-300 border-2 active:scale-95 ${isSelected ? 'bg-gradient-to-br from-blue-500 to-blue-600 border-blue-400 text-white scale-105' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>
+                            {isSelected && <span className="absolute -inset-1 rounded-2xl border border-blue-400/50 animate-pulse pointer-events-none"></span>}
+                            {cat.label || 'Cat'}
+                          </button>
+                        );
+                    })}
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-3 pt-2 border-t border-slate-700/50">
+                <button type="button" onClick={cancelEditTask} className="px-5 py-3 bg-slate-800 text-slate-300 rounded-xl font-medium">Cancelar</button>
+                <button type="submit" className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-blue-500/30">Salvar Tarefa</button>
+              </div>
+            </form>
+          )}
+
+          <div className="space-y-1">
+            {sortedTasksGlobally.map(task => {
+                if (!task || !task.id) return null; 
+                
+                const status = getTaskStatus(task.dueDate, task.completed);
+                const classStr = getStatusColors(status);
+                
+                const categoryObj = taskCategories.find(c => c && c.id === task.category);
+                const categoryLabel = categoryObj?.label || task.category || 'Geral';
+                const safeTitle = task.title || 'Sem Título';
+                
+                const recurrenceLabels = { daily: 'Diária', weekly: 'Semanal', monthly: 'Mensal', yearly: 'Anual' };
+                const recLabel = task.recurrence ? recurrenceLabels[task.recurrence] : null;
+                
                 return (
-                  <button type="button" key={k} onClick={() => setNewType(k)} className={`p-4 rounded-[25px] border-2 transition-all flex flex-col items-center gap-2 ${newType === k ? 'bg-cyan-500/20 border-cyan-500 text-cyan-400 scale-105 shadow-lg shadow-cyan-500/10' : 'bg-slate-950 border-slate-800 text-slate-600'}`}>
-                    <IconComp size={28}/>
-                    <span className="text-[10px] uppercase font-black tracking-tighter">{v.label}</span>
-                  </button>
+                  <SwipeableItem key={task.id} onEdit={() => startEditTask(task)} onDeleteRequest={() => setDeletePrompt({ type: 'task', id: task.id, title: safeTitle })} frontClass={`${classStr} p-4 flex items-center gap-4`}>
+                    <button onClick={() => toggleTask(task.id)} className={`w-6 h-6 rounded-md border flex items-center justify-center shrink-0 active:scale-75 ${task.completed ? 'bg-blue-600 border-blue-600' : 'border-slate-500'}`}>
+                      {task.completed && <Check className="w-4 h-4 text-white" />}
+                    </button>
+                    
+                    <div className="flex-1 min-w-0 pointer-events-none">
+                      <div className="flex justify-between items-center">
+                         <h3 className={`font-bold truncate transition-colors`}>{safeTitle}</h3>
+                         {!task.completed && task.hasReminder && <BellRing className={`w-4 h-4 shrink-0 opacity-80`} />}
+                      </div>
+                      <p className="text-xs flex items-center gap-2 mt-1 opacity-80">
+                        <span className="capitalize">{categoryLabel}</span>
+                        <span>•</span>
+                        <span>{formatDateLocal(task.dueDate)} {task.dueTime && `• ${task.dueTime}`}</span>
+                        {recLabel && (
+                           <>
+                             <span>•</span>
+                             <span className="text-blue-400 flex items-center gap-1">🔁 {recLabel}</span>
+                           </>
+                        )}
+                      </p>
+                    </div>
+                  </SwipeableItem>
                 );
+            })}
+          </div>
+        </div>
+      );
+    } catch (error) {
+      return <div className="p-4 bg-red-900/50 text-red-200 rounded-xl">Erro Agenda: {error.message}</div>;
+    }
+  };
+
+  const renderRoutine = () => {
+    try {
+      const dateStr = selectedDate.toISOString().split('T')[0];
+      const dayHabits = safeHabits[dateStr] || {};
+      const dayTasks = Array.isArray(safeDailyTasks[dateStr]) ? safeDailyTasks[dateStr] : [];
+
+      const totalItems = habitsList.length + dayTasks.length;
+      const completedItems = habitsList.filter(h => h && dayHabits[h.id]).length + dayTasks.filter(t => t && t.completed).length;
+      const progressPercent = totalItems === 0 ? 0 : Math.round((completedItems / totalItems) * 100);
+
+      return (
+        <div className="space-y-6 animate-in fade-in pb-6">
+          <header className="mb-6">
+            <h1 className="text-2xl font-bold text-slate-100">Foco</h1>
+            <p className="text-slate-400">A sua rotina fina e compromissos rápidos.</p>
+          </header>
+
+          <div className="flex items-center justify-between bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-md">
+            <button onClick={() => {const d=new Date(selectedDate); d.setDate(d.getDate()-1); setSelectedDate(d);}} className="p-2 text-slate-400 hover:text-white"><ChevronLeft /></button>
+            <div className="text-center">
+              <p className="text-sm font-semibold text-blue-400 uppercase tracking-widest">{selectedDate.toLocaleDateString('pt-BR', { weekday: 'long' })}</p>
+              <p className="text-xl font-bold text-white">{selectedDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' })}</p>
+            </div>
+            <button onClick={() => {const d=new Date(selectedDate); d.setDate(d.getDate()+1); setSelectedDate(d);}} className="p-2 text-slate-400 hover:text-white"><ChevronRight /></button>
+          </div>
+
+          <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 relative overflow-hidden">
+            <div className="flex justify-between items-end mb-2 relative z-10">
+              <div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-0.5">Progresso do Dia</p>
+                <p className="text-sm font-medium text-slate-300">{completedItems} de {totalItems} concluídos</p>
+              </div>
+              <span className="text-2xl font-bold font-mono text-blue-400">{progressPercent}%</span>
+            </div>
+            <div className="w-full h-2.5 bg-slate-900 rounded-full overflow-hidden">
+              <div className="h-full rounded-full bg-blue-500 transition-all duration-500" style={{ width: `${progressPercent}%` }}></div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2 px-1">
+              <CheckCircle2 className="w-4 h-4 text-blue-400" /> Foco do Dia (Sincronizado)
+            </h2>
+            <form onSubmit={handleAddDailyTask} className="flex gap-2">
+              <input type="text" className="flex-1 bg-slate-800 border border-slate-700 rounded-xl p-3 text-sm text-white" value={newDailyTask} onChange={e => setNewDailyTask(e.target.value)} placeholder="+ Adicionar compromisso rápido..."/>
+              <button type="submit" disabled={!newDailyTask.trim()} className="bg-blue-600 disabled:opacity-50 text-white px-4 rounded-xl text-sm font-medium">Add</button>
+            </form>
+
+            <div className="space-y-2 mt-3">
+              {dayTasks.map(task => {
+                  if(!task || !task.id) return null;
+                  const safeText = task.text || 'Compromisso';
+                  return(
+                  <SwipeableItem key={task.id} frontClass="bg-slate-800/80 border-slate-700/80 p-3.5 flex items-center justify-between" wrapperClass="mb-0" onEdit={()=>{}} onDeleteRequest={() => setDeletePrompt({ type: 'dailyTask', id: task.id, title: safeText, dateStr: dateStr })}>
+                    <label className="flex items-center gap-3 cursor-pointer flex-1 w-full">
+                      <div className="relative flex items-center justify-center w-6 h-6 shrink-0">
+                        <input type="checkbox" checked={!!task.completed} onChange={() => toggleDailyTask(dateStr, task.id)} className="peer sr-only"/>
+                        <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all duration-200 active:scale-75 ${task.completed ? 'bg-blue-500 border-blue-500' : 'border-slate-500'}`}>
+                          {task.completed && <Check className="w-3.5 h-3.5 text-white" />}
+                        </div>
+                      </div>
+                      <span className={`text-sm font-medium transition-colors ${task.completed ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{safeText}</span>
+                    </label>
+                  </SwipeableItem>
+                  );
               })}
             </div>
-            <button type="submit" className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 py-6 rounded-3xl font-black text-white text-2xl shadow-xl active:scale-95 transition-transform uppercase tracking-widest border-b-4 border-blue-800">
-              {editingTaskId ? 'SALVAR ALTERAÇÕES' : 'GUARDAR MISSÃO'}
-            </button>
-          </form>
-        </div>
-      )}
+          </div>
 
-      {showRobuxReward && (
-        <div className="fixed inset-0 z-[100] bg-slate-950/98 flex items-center justify-center p-6 text-center animate-in zoom-in duration-700">
-          <div className="bg-slate-900 border-4 border-yellow-400 p-12 rounded-[60px] shadow-[0_0_100px_rgba(250,204,21,0.5)] animate-bounce relative">
-             <Star size={120} fill="#facc15" className="mx-auto mb-8 text-yellow-400 drop-shadow-[0_0_30px_rgba(250,204,21,1)]" />
-             <h2 className="text-6xl font-black text-yellow-400 mb-4 italic tracking-tighter uppercase">Incrível!</h2>
-             <p className="text-white font-black text-2xl mb-10 uppercase tracking-[0.2em]">Conquistaste 500 Estrelas!</p>
-             <div className="bg-gradient-to-br from-emerald-500 to-green-800 p-10 rounded-[45px] shadow-2xl border-t-4 border-emerald-300">
-                <span className="block text-white font-black text-6xl mb-3 drop-shadow-xl font-mono">R$ 29,90</span>
-                <span className="text-emerald-100 font-black text-xl uppercase tracking-widest">Robux Liberados! 🎁</span>
-             </div>
-             <button onClick={() => setShowRobuxReward(false)} className="mt-10 bg-slate-800 px-10 py-3 rounded-full text-slate-400 font-black uppercase text-xs hover:text-white transition-colors tracking-widest">Fechar</button>
+          <div className="space-y-3 pt-4 border-t border-slate-800">
+            <div className="flex justify-between items-center px-1">
+              <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2"><Activity className="w-4 h-4 text-emerald-400" /> Hábitos Fixos</h2>
+              <button onClick={() => setShowAddHabit(!showAddHabit)} className="text-xs font-medium text-blue-400 bg-blue-500/10 px-2 py-1 rounded-md">Editar</button>
+            </div>
+            {showAddHabit && (
+              <form onSubmit={handleAddHabit} className="bg-slate-800 p-3.5 rounded-xl border border-slate-700 mb-4 flex gap-2">
+                <input type="text" required autoFocus className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white" value={newHabitLabel} onChange={e => setNewHabitLabel(e.target.value)} placeholder="Novo hábito..."/>
+                <button type="submit" className="bg-emerald-600 text-white px-4 rounded-lg text-sm font-medium">Salvar</button>
+              </form>
+            )}
+            <div className="space-y-2">
+              {habitsList.map(habit => {
+                  if(!habit || !habit.id) return null;
+                  const isDone = !!dayHabits[habit.id];
+                  const safeLabel = habit.label || 'Hábito';
+                  return (
+                    <SwipeableItem key={habit.id} frontClass="bg-slate-800 border-slate-700 p-4 flex items-center justify-between" wrapperClass="mb-0" onEdit={() => setEditPrompt({ type: 'habit', id: habit.id, label: safeLabel })} onDeleteRequest={() => setDeletePrompt({ type: 'habit', id: habit.id, title: safeLabel })}>
+                      <label className="flex items-center gap-4 cursor-pointer flex-1 w-full">
+                        <div className="relative flex items-center justify-center w-8 h-8 shrink-0">
+                          <input type="checkbox" checked={isDone} onChange={() => toggleHabit(dateStr, habit.id)} className="peer sr-only" />
+                          <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all duration-300 active:scale-75 ${isDone ? 'bg-emerald-500 border-emerald-500' : 'border-slate-500'}`}>
+                            {isDone && <Check className="w-4 h-4 text-white" />}
+                          </div>
+                        </div>
+                        <span className={`text-base font-medium ${isDone ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{safeLabel}</span>
+                      </label>
+                    </SwipeableItem>
+                  );
+              })}
+            </div>
           </div>
         </div>
-      )}
+      );
+    } catch (error) {
+      return <div className="p-4 bg-red-900/50 text-red-200 rounded-xl">Erro Rotina: {error.message}</div>;
+    }
+  };
 
-      {taskToDelete && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in">
-          <div className="bg-slate-900 border-2 border-rose-500 shadow-[0_0_30px_rgba(244,63,94,0.3)] rounded-3xl p-8 max-w-sm w-full text-center space-y-6">
-            <div className="w-20 h-20 bg-rose-500/20 rounded-full flex items-center justify-center mx-auto text-rose-500"><AlertTriangle size={40} /></div>
+  const renderPortfolio = () => {
+    try {
+      return (
+        <div className="space-y-6 animate-in fade-in pb-6">
+          <header className="flex justify-between items-start mb-6">
             <div>
-              <h3 className="text-2xl font-black text-slate-200 mb-2 uppercase">Apagar Missão?</h3>
-              <p className="text-slate-400 font-bold">Tem certeza que quer remover <br/>"<span className="text-rose-400">{taskToDelete.title}</span>"?</p>
+              <h1 className="text-2xl font-bold text-slate-100">Ativos</h1>
+              <p className="text-slate-400">Distribuição do seu património.</p>
             </div>
-            <div className="flex gap-3">
-              <button onClick={() => setTaskToDelete(null)} className="flex-1 py-4 rounded-2xl font-black text-slate-300 bg-slate-800 hover:bg-slate-700 transition-colors uppercase text-sm tracking-widest">Cancelar</button>
-              <button onClick={confirmDelete} className="flex-1 py-4 rounded-2xl font-black text-white bg-rose-500 hover:bg-rose-600 shadow-[0_0_15px_rgba(244,63,94,0.4)] transition-colors uppercase text-sm tracking-widest">Apagar</button>
+            <button onClick={() => { hapticFeedback(30); setIsEditingPortfolioCats(!isEditingPortfolioCats); }} className={`p-2 rounded-full transition-colors active:scale-95 ${isEditingPortfolioCats ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'bg-slate-800 text-slate-400 hover:text-slate-200'}`}>
+              <Edit2 className="w-5 h-5" />
+            </button>
+          </header>
+
+          {isEditingPortfolioCats ? (
+            <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 space-y-2 animate-in fade-in shadow-lg">
+              <div className="max-h-64 overflow-y-auto space-y-2 pr-1 hide-scrollbar">
+                {portfolioCategories.map(cat => {
+                    if(!cat || !cat.id) return null;
+                    const safeLabel = cat.label || 'Ativo';
+                    return (
+                    <SwipeableItem key={cat.id} wrapperClass="mb-0" frontClass="p-3 bg-slate-900 border-slate-700 flex justify-between items-center" onEdit={() => setEditPrompt({ type: 'portfolioCat', id: cat.id, label: safeLabel })} onDeleteRequest={() => setDeletePrompt({ type: 'portfolioCat', id: cat.id, title: safeLabel })}>
+                      <span className="text-slate-200 truncate pr-2 font-medium w-full">{safeLabel}</span>
+                    </SwipeableItem>
+                    );
+                })}
+              </div>
+              <div className="flex gap-2 mt-2 pt-4 border-t border-slate-700/50">
+                <input type="text" value={newPortfolioCatLabel} onChange={e => setNewPortfolioCatLabel(e.target.value)} className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white" placeholder="Novo ativo..." />
+                <button type="button" onClick={handleAddPortfolioCategory} className="bg-blue-600 text-white px-4 rounded-lg text-sm font-medium">Adicionar</button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {portfolioCategories.map(cat => {
+                  if(!cat || !cat.id) return null;
+                  const catValueNum = parseCurrencyToNumber(safePortfolio[cat.id]);
+                  const percent = currentPortfolioTotal > 0 ? ((catValueNum / currentPortfolioTotal) * 100).toFixed(1) : 0;
+                  const safeLabel = cat.label || 'Ativo';
+                  
+                  return (
+                    <div key={cat.id} className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm focus-within:border-blue-500/50 transition-all flex flex-col gap-3">
+                      <div className="flex justify-between items-center">
+                        <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">{safeLabel}</label>
+                        <span className="text-[10px] font-bold px-2 py-1 bg-slate-900 text-blue-400 rounded-md border border-slate-700">
+                          {percent}% da carteira
+                        </span>
+                      </div>
+                      
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-medium text-sm">R$</span>
+                        <input type="text" inputMode="numeric" placeholder="0,00" value={safePortfolio[cat.id] || ''} onChange={e => handlePortfolioChange(cat.id, e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg py-3 pl-9 pr-3 text-white font-mono focus:outline-none transition-colors text-base tracking-tighter shadow-inner" />
+                      </div>
+                      <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
+                        <div className="bg-blue-500 h-1.5 rounded-full" style={{ width: `${percent}%` }}></div>
+                      </div>
+                    </div>
+                  );
+              })}
+            </div>
+          )}
+          
+          <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm flex items-center justify-between">
+            <label className="text-sm font-semibold text-slate-300">Data Base</label>
+            <input type="date" value={portfolioUpdateDate} onChange={e => setPortfolioUpdateDate(e.target.value)} className="bg-slate-900 border border-slate-700 rounded-lg p-2 text-white font-medium text-sm color-scheme-dark" />
+          </div>
+
+          <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700 shadow-lg mt-8 relative overflow-hidden">
+            <div className={`absolute top-0 right-0 -mr-10 -mt-10 w-40 h-40 rounded-full blur-3xl pointer-events-none transition-colors duration-500 ${isPortfolioPositive ? 'bg-emerald-500/10' : 'bg-red-500/10'}`}></div>
+            <h3 className="text-lg font-bold text-white mb-5 flex items-center gap-2 relative z-10"><Activity className="w-5 h-5 text-blue-400"/> Evolução</h3>
+            <div className="grid grid-cols-2 gap-3 mb-4 relative z-10">
+              <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-700/50">
+                <p className="text-slate-400 text-[10px] font-bold uppercase mb-1.5">Saldo Anterior</p>
+                <div className="relative">
+                  <span className="absolute left-0 top-1/2 -translate-y-1/2 text-slate-500 text-[13px]">R$</span>
+                  <input type="text" inputMode="numeric" placeholder="0,00" value={prevPortfolioBalance} onChange={e => handlePrevBalanceChange(e.target.value)} className="w-full bg-transparent pl-[1.35rem] pr-1 text-white font-mono focus:outline-none text-[14px]" />
+                </div>
+              </div>
+              <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-700/50">
+                <p className="text-slate-400 text-[10px] font-bold uppercase mb-1.5">Saldo Atual</p>
+                <p className="text-[14px] font-mono text-white pt-0.5">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(currentPortfolioTotal)}</p>
+              </div>
+            </div>
+            <div className={`relative z-10 p-4 rounded-xl border ${isPortfolioPositive ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-red-500/10 border-red-500/20'}`}>
+              <p className={`text-[10px] font-bold uppercase mb-1 ${isPortfolioPositive ? 'text-emerald-400/80' : 'text-red-400/80'}`}>Diferença</p>
+              <p className={`text-xl font-bold font-mono ${isPortfolioPositive ? 'text-emerald-400' : 'text-red-400'}`}>{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', signDisplay: 'always' }).format(portfolioDifference)}</p>
             </div>
           </div>
         </div>
-      )}
+      );
+    } catch (error) {
+      return <div className="p-4 bg-red-900/50 text-red-200 rounded-xl">Erro Ativos: {error.message}</div>;
+    }
+  };
+
+  return (
+    <div className="flex justify-center bg-slate-900 font-sans text-slate-200 selection:bg-blue-500/30 h-[100dvh] w-full overflow-hidden">
+      <div className="w-full max-w-md bg-slate-900 relative flex flex-col h-full shadow-2xl shadow-black/50 border-x border-slate-800">
+        
+        {/* TOPBAR */}
+        <div className="shrink-0 pt-6 pb-2 px-6 flex justify-between items-center bg-slate-900/90 backdrop-blur-md z-10 border-b border-slate-800">
+          <div className="font-black text-xl tracking-tight text-white flex items-center gap-2">
+            <div className="w-7 h-7 bg-gradient-to-br from-blue-500 to-blue-700 rounded-md flex items-center justify-center shadow-lg shadow-blue-500/30">
+              <span className="text-white text-sm">P</span>
+            </div>
+            Planner<span className="text-blue-500">Full</span>
+          </div>
+          
+          <button onClick={() => { hapticFeedback(30); setIsSidebarOpen(true); }} className="w-9 h-9 rounded-full bg-slate-800 border-2 border-slate-600 flex items-center justify-center hover:border-blue-400 transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 relative active:scale-95">
+            <User className="w-5 h-5 text-slate-300" />
+            <span className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-slate-900 ${syncStatus === 'online' ? 'bg-emerald-500' : syncStatus === 'syncing' ? 'bg-yellow-500 animate-pulse' : 'bg-slate-500'}`}></span>
+          </button>
+        </div>
+
+        {/* ÁREA CENTRAL C/ BOUNDARY INDIVIDUAL */}
+        <main className="flex-1 overflow-y-auto p-6 scroll-smooth">
+          {activeTab === 'dashboard' && <TabErrorBoundary storageKeys={['planner_v3_tasks', 'planner_v3_portfolio']}>{renderDashboard()}</TabErrorBoundary>}
+          {activeTab === 'tasks' && <TabErrorBoundary storageKeys={['planner_v3_tasks', 'planner_v3_categories']}>{renderTasks()}</TabErrorBoundary>}
+          {activeTab === 'routine' && <TabErrorBoundary storageKeys={['planner_v3_habits', 'planner_v3_habitsList', 'planner_v3_dailyTasks']}>{renderRoutine()}</TabErrorBoundary>}
+          {activeTab === 'portfolio' && <TabErrorBoundary storageKeys={['planner_v3_portfolio', 'planner_v3_portfolioCats']}>{renderPortfolio()}</TabErrorBoundary>}
+        </main>
+
+        {/* BOTTOM NAV */}
+        <nav className="shrink-0 bg-slate-900 border-t border-slate-800 pb-safe pt-2 px-6 flex justify-between items-center w-full shadow-[0_-10px_40px_rgba(0,0,0,0.5)] z-20">
+          {[
+            { id: 'dashboard', icon: Home, label: 'Início' },
+            { id: 'tasks', icon: CheckSquare, label: 'Agenda' },
+            { id: 'routine', icon: Activity, label: 'Foco' },
+            { id: 'portfolio', icon: Briefcase, label: 'Ativos' },
+          ].map(tab => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button key={tab.id} onClick={() => changeTab(tab.id)} className={`flex flex-col items-center p-2 rounded-xl min-w-[64px] transition-all duration-300 active:scale-90 ${isActive ? 'text-blue-500' : 'text-slate-500'}`}>
+                <div className={`relative p-1.5 rounded-lg transition-colors ${isActive ? 'bg-blue-500/10' : ''}`}>
+                  <Icon className="w-6 h-6" strokeWidth={isActive ? 2.5 : 2} />
+                  {tab.id === 'dashboard' && hasUrgentTasks && <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 border-2 border-slate-900 rounded-full animate-pulse"></span>}
+                </div>
+                <span className={`text-[10px] font-semibold mt-1 tracking-wide ${isActive ? 'opacity-100' : 'opacity-0 h-0 overflow-hidden'}`}>{tab.label}</span>
+              </button>
+            )
+          })}
+        </nav>
+
+        {/* SIDEBAR MODAL */}
+        {isSidebarOpen && (
+          <div className="absolute inset-0 z-[100] flex justify-end overflow-hidden">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setIsSidebarOpen(false)}></div>
+            <div className="relative w-72 h-full bg-slate-900 border-l border-slate-800 shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+              
+              <div className="p-6 border-b border-slate-800 bg-slate-800/50">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="w-14 h-14 rounded-full bg-blue-600/20 border border-blue-500/50 flex items-center justify-center">
+                    <User className="w-7 h-7 text-blue-400" />
+                  </div>
+                  <button onClick={() => setIsSidebarOpen(false)} className="p-2 text-slate-400 hover:text-white bg-slate-800 rounded-full">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <h2 className="text-lg font-bold text-white">Usuário Premium</h2>
+                
+                <div className="flex items-center gap-2 mt-2 mb-4">
+                  {syncStatus === 'online' && <><Cloud className="w-4 h-4 text-emerald-400"/><span className="text-xs text-emerald-400 font-medium">Sincronizado</span></>}
+                  {syncStatus === 'syncing' && <><RefreshCw className="w-4 h-4 text-yellow-400 animate-spin"/><span className="text-xs text-yellow-400 font-medium">A sincronizar...</span></>}
+                  {syncStatus === 'offline' && <><CloudOff className="w-4 h-4 text-slate-500"/><span className="text-xs text-slate-500 font-medium">Modo Offline</span></>}
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-1">
+                <button onClick={requestNotificationPermission} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-slate-300 transition-colors">
+                  <BellRing className="w-5 h-5 text-slate-400" /> <span className="font-medium text-left">Ativar Notificações</span>
+                </button>
+              </div>
+
+              <div className="p-4 border-t border-slate-800">
+                <p className="text-center text-[10px] text-slate-500 mt-4 uppercase tracking-widest">Planner Full v2.3.1 (Imortal)</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAIS DELETE / EDIT */}
+        {deletePrompt && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+            <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-[320px] border border-slate-700 shadow-2xl">
+              <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center mb-4 mx-auto">
+                <Trash2 className="w-6 h-6 text-red-400" />
+              </div>
+              <h3 className="text-xl font-bold text-white text-center mb-2">Atenção</h3>
+              <p className="text-slate-400 text-center text-sm mb-6">Apagar {getDeleteTypeLabel(deletePrompt.type)} "{deletePrompt.title}"?</p>
+              <div className="flex gap-3">
+                <button onClick={() => setDeletePrompt(null)} className="flex-1 py-3 rounded-xl bg-slate-700 text-white font-medium">Cancelar</button>
+                <button onClick={confirmDelete} className="flex-1 py-3 rounded-xl bg-red-600 text-white font-medium">Excluir</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {editPrompt && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+            <form onSubmit={handleSaveSimpleEdit} className="bg-slate-800 rounded-2xl p-6 w-full max-w-[320px] border border-slate-700 shadow-2xl">
+              <h3 className="text-xl font-bold text-white mb-4">Editar {editPrompt.type}</h3>
+              <input type="text" required autoFocus className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:border-blue-500 outline-none mb-6" value={editPrompt.label} onChange={e => setEditPrompt({...editPrompt, label: e.target.value})} />
+              <div className="flex gap-3">
+                <button type="button" onClick={() => setEditPrompt(null)} className="flex-1 py-3 rounded-xl bg-slate-700 text-white font-medium">Cancelar</button>
+                <button type="submit" className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-medium">Salvar</button>
+              </div>
+            </form>
+          </div>
+        )}
+      </div>
+
+      <style dangerouslySetInnerHTML={{__html: `
+        .pb-safe { padding-bottom: max(env(safe-area-inset-bottom, 20px), 16px); } 
+        input[type="date"]::-webkit-calendar-picker-indicator, input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: 0.5; cursor: pointer; } 
+        ::-webkit-scrollbar { width: 0px; background: transparent; } 
+        .hide-scrollbar::-webkit-scrollbar { display: none; } 
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      `}} />
     </div>
   );
 }
-
-
