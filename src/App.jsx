@@ -142,7 +142,6 @@ const SwipeableItem = ({ onEdit, onDeleteRequest, children, frontClass = "bg-sla
   const handleStart = (e) => {
     if (isDragDisabled || !e) return;
     
-    // BLINDAGEM EXTRA: Prevenir crash se o target for SVG ou nulo
     try {
       const tagName = typeof e?.target?.tagName === 'string' ? e.target.tagName.toLowerCase() : '';
       if (['input', 'textarea', 'button', 'select'].includes(tagName)) return;
@@ -211,7 +210,6 @@ const SwipeableItem = ({ onEdit, onDeleteRequest, children, frontClass = "bg-sla
   );
 };
 
-// --- COMPONENTE DICA DE DESLIZE (O QUE ESTAVA EM FALTA) ---
 const SwipeHint = () => (
   <div className="flex items-center justify-center gap-2 mb-3 mt-1 text-slate-500 opacity-70 text-[10px] uppercase font-bold tracking-widest">
     <ChevronRight className="w-3 h-3 animate-pulse" />
@@ -321,7 +319,6 @@ export default function App() {
   const [showAddHabit, setShowAddHabit] = useState(false);
   const [newHabitLabel, setNewHabitLabel] = useState('');
   
-  // --- NOVOS ESTADOS PARA O COMPROMISSO RÁPIDO (FOCO) ---
   const [newDailyTask, setNewDailyTask] = useState('');
   const [newDailyTaskTime, setNewDailyTaskTime] = useState('');
   const [newDailyTaskReminder, setNewDailyTaskReminder] = useState(false);
@@ -332,7 +329,6 @@ export default function App() {
   const [deletePrompt, setDeletePrompt] = useState(null); 
   const [editPrompt, setEditPrompt] = useState(null); 
 
-  // HIGHLIGHT DE ARRASTAR
   const [activeDailyDrag, setActiveDailyDrag] = useState(null);
 
   const loadDataFromCloud = async (user) => {
@@ -392,7 +388,6 @@ export default function App() {
     });
   }, []);
 
-  // --- MOTOR DE LEMBRETES UNIFICADO (Agenda + Foco) ---
   const todayObj = new Date(); 
   todayObj.setHours(0, 0, 0, 0);
   const todayStr = new Date(todayObj.getTime() - (todayObj.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
@@ -538,36 +533,29 @@ export default function App() {
   };
   const handleDragEnd = (e) => { e.stopPropagation(); if (draggingId.current) hapticFeedback(20); draggingId.current = null; };
 
-  // DRAG AND DROP DIÁRIO (FOCO) + HIGHLIGHT MAGNÉTICO
   const draggingDailyId = useRef(null);
-  
   const handleDailyDragStart = (e, id) => {
     e.stopPropagation();
     draggingDailyId.current = id;
     setActiveDailyDrag(id);
     hapticFeedback(20);
   };
-
   const handleDailyDragMove = (e) => {
     if (!draggingDailyId.current) return;
     e.preventDefault();
     const isMouse = typeof e?.type === 'string' && e.type.includes('mouse');
     const clientX = isMouse ? e.clientX : (e?.touches?.[0]?.clientX || 0);
     const clientY = isMouse ? e.clientY : (e?.touches?.[0]?.clientY || 0);
-
     const targetElement = document.elementFromPoint(clientX, clientY);
     const dropZone = targetElement?.closest('[data-daily-drag-id]');
-
     if (dropZone && dropZone.dataset.dailyDragId !== String(draggingDailyId.current)) {
       const targetId = Number(dropZone.dataset.dailyDragId);
-
       setDailyTasks(prev => {
         const activeStr = selectedDate ? selectedDate.toISOString().split('T')[0] : todayStr;
         const todayList = prev[activeStr] || [];
         const arr = [...todayList];
         const idx1 = arr.findIndex(t => t && t.id === draggingDailyId.current);
         const idx2 = arr.findIndex(t => t && t.id === targetId);
-
         if (idx1 >= 0 && idx2 >= 0) {
           const temp = arr[idx1];
           arr.splice(idx1, 1);
@@ -579,7 +567,6 @@ export default function App() {
       hapticFeedback(15);
     }
   };
-
   const handleDailyDragEnd = (e) => {
     e.stopPropagation();
     if (draggingDailyId.current) hapticFeedback(20);
@@ -609,9 +596,20 @@ export default function App() {
     e.preventDefault();
     hapticFeedback(30);
     if (!editPrompt || typeof editPrompt.label !== 'string' || !editPrompt.label.trim()) return;
-    if (editPrompt.type === 'habit') setHabitsList(habitsList.map(h => h?.id === editPrompt.id ? { ...h, label: editPrompt.label } : h));
-    else if (editPrompt.type === 'category') setTaskCategories(taskCategories.map(c => c?.id === editPrompt.id ? { ...c, label: editPrompt.label } : c));
-    else if (editPrompt.type === 'portfolioCat') setPortfolioCategories(portfolioCategories.map(c => c?.id === editPrompt.id ? { ...c, label: editPrompt.label } : c));
+    
+    if (editPrompt.type === 'habit') {
+      setHabitsList(habitsList.map(h => h?.id === editPrompt.id ? { ...h, label: editPrompt.label } : h));
+    } else if (editPrompt.type === 'category') {
+      setTaskCategories(taskCategories.map(c => c?.id === editPrompt.id ? { ...c, label: editPrompt.label } : c));
+    } else if (editPrompt.type === 'portfolioCat') {
+      setPortfolioCategories(portfolioCategories.map(c => c?.id === editPrompt.id ? { ...c, label: editPrompt.label } : c));
+    } else if (editPrompt.type === 'dailyTask') {
+      setDailyTasks(prev => {
+        const dStr = editPrompt.dateStr;
+        const dayList = prev[dStr] || [];
+        return { ...prev, [dStr]: dayList.map(t => t?.id === editPrompt.id ? { ...t, text: editPrompt.label } : t) };
+      });
+    }
     setEditPrompt(null);
   };
 
@@ -803,7 +801,12 @@ export default function App() {
                     
                     return (
                     <div key={`rt_${task.id || Math.random()}`} data-daily-drag-id={task.id} className={dragClasses}>
-                      <SwipeableItem onEdit={()=>{}} onDeleteRequest={() => setDeletePrompt({ type: 'dailyTask', id: task.id, title: safeText, dateStr: todayStr })} frontClass="bg-slate-800/80 border-slate-700/80 p-3.5 flex items-center justify-between" wrapperClass="mb-0" isDragDisabled>
+                      <SwipeableItem 
+                        onEdit={() => setEditPrompt({ type: 'dailyTask', id: task.id, label: safeText, dateStr: todayStr })} 
+                        onDeleteRequest={() => setDeletePrompt({ type: 'dailyTask', id: task.id, title: safeText, dateStr: todayStr })} 
+                        frontClass="bg-slate-800/80 border-slate-700/80 p-3.5 flex items-center justify-between" 
+                        wrapperClass="mb-0"
+                      >
                         <label className="flex items-center gap-3 cursor-pointer flex-1 w-full min-w-0 pr-2">
                           <div className="relative flex items-center justify-center w-6 h-6 shrink-0">
                             <input type="checkbox" checked={!!task.completed} onChange={() => toggleDailyTask(todayStr, task.id)} className="peer sr-only"/>
@@ -1093,7 +1096,12 @@ export default function App() {
                   
                   return(
                   <div key={`rt_foco_${task.id}`} data-daily-drag-id={task.id} className={dragClasses}>
-                    <SwipeableItem onEdit={()=>{}} onDeleteRequest={() => setDeletePrompt({ type: 'dailyTask', id: task.id, title: safeText, dateStr: dateStr })} frontClass="bg-slate-800/80 border-slate-700/80 p-3.5 flex items-center justify-between" wrapperClass="mb-0" isDragDisabled>
+                    <SwipeableItem 
+                      onEdit={() => setEditPrompt({ type: 'dailyTask', id: task.id, label: safeText, dateStr: dateStr })} 
+                      onDeleteRequest={() => setDeletePrompt({ type: 'dailyTask', id: task.id, title: safeText, dateStr: dateStr })} 
+                      frontClass="bg-slate-800/80 border-slate-700/80 p-3.5 flex items-center justify-between" 
+                      wrapperClass="mb-0"
+                    >
                       <label className="flex items-center gap-3 cursor-pointer flex-1 w-full min-w-0 pr-2">
                         <div className="relative flex items-center justify-center w-6 h-6 shrink-0">
                           <input type="checkbox" checked={!!task.completed} onChange={() => toggleDailyTask(dateStr, task.id)} className="peer sr-only"/>
@@ -1333,7 +1341,7 @@ export default function App() {
               </div>
 
               <div className="p-4 border-t border-slate-800">
-                <p className="text-center text-[10px] text-slate-500 mt-4 uppercase tracking-widest">Planner Full v2.4.2</p>
+                <p className="text-center text-[10px] text-slate-500 mt-4 uppercase tracking-widest">Planner Full v2.4.3 (Swipe Foco)</p>
               </div>
             </div>
           </div>
@@ -1359,7 +1367,7 @@ export default function App() {
         {editPrompt && (
           <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
             <form onSubmit={handleSaveSimpleEdit} className="bg-slate-800 rounded-2xl p-6 w-full max-w-[320px] border border-slate-700 shadow-2xl">
-              <h3 className="text-xl font-bold text-white mb-4">Editar {editPrompt.type}</h3>
+              <h3 className="text-xl font-bold text-white mb-4">Editar {editPrompt.type === 'dailyTask' ? 'compromisso' : editPrompt.type}</h3>
               <input type="text" required autoFocus className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:border-blue-500 outline-none mb-6" value={editPrompt.label} onChange={e => setEditPrompt({...editPrompt, label: e.target.value})} />
               <div className="flex gap-3">
                 <button type="button" onClick={() => setEditPrompt(null)} className="flex-1 py-3 rounded-xl bg-slate-700 text-white font-medium">Cancelar</button>
@@ -1380,6 +1388,8 @@ export default function App() {
     </div>
   );
 }
+
+
 
 
 
