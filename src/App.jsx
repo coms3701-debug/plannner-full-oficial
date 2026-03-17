@@ -370,8 +370,11 @@ export default function App() {
     }, 2000);
   }, [tasks, taskCategories, habitsList, habits, dailyTasks, portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance, firebaseUser]);
 
+  // INJEÇÃO BLINDADA DO ÍCONE E PWA
   useEffect(() => {
     document.title = "Planner Full";
+    
+    // Injetar Tags de Meta (Geral)
     const metaTags = [
       { name: "apple-mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
@@ -388,6 +391,22 @@ export default function App() {
       }
       tag.content = content;
     });
+
+    // Injetar Forçadamente os Links do Ícone (Resolve o PWA Preto)
+    const linkTags = [
+      { rel: "apple-touch-icon", href: "/icon.png" }, // <--- FORÇA O IOS A LER A SUA IMAGEM
+      { rel: "icon", href: "/icon.png" }
+    ];
+    linkTags.forEach(({ rel, href }) => {
+      let tag = document.querySelector(`link[rel="${rel}"]`);
+      if (!tag) {
+        tag = document.createElement('link');
+        tag.rel = rel;
+        document.head.appendChild(tag);
+      }
+      tag.href = href;
+    });
+
   }, []);
 
   // --- MOTOR DE LEMBRETES UNIFICADO (Agenda + Foco) ---
@@ -1381,13 +1400,13 @@ export default function App() {
               </div>
 
               <div className="p-4 border-t border-slate-800">
-                <p className="text-center text-[10px] text-slate-500 mt-4 uppercase tracking-widest">Planner Full v2.4.4 (Reprogramar Foco)</p>
+                <p className="text-center text-[10px] text-slate-500 mt-4 uppercase tracking-widest">Planner Full v2.4.5 (PWA Fix)</p>
               </div>
             </div>
           </div>
         )}
 
-        {/* MODAIS DELETE / EDIT (AGORA INTELIGENTE) */}
+        {/* MODAIS DELETE / EDIT */}
         {deletePrompt && (
           <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
             <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-[320px] border border-slate-700 shadow-2xl">
@@ -1450,6 +1469,7 @@ export default function App() {
     </div>
   );
 }
+
 
 
 
