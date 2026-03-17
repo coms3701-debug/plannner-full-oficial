@@ -319,6 +319,7 @@ export default function App() {
   const [showAddHabit, setShowAddHabit] = useState(false);
   const [newHabitLabel, setNewHabitLabel] = useState('');
   
+  // --- NOVOS ESTADOS PARA O COMPROMISSO RÁPIDO (FOCO) ---
   const [newDailyTask, setNewDailyTask] = useState('');
   const [newDailyTaskTime, setNewDailyTaskTime] = useState('');
   const [newDailyTaskReminder, setNewDailyTaskReminder] = useState(false);
@@ -329,6 +330,7 @@ export default function App() {
   const [deletePrompt, setDeletePrompt] = useState(null); 
   const [editPrompt, setEditPrompt] = useState(null); 
 
+  // HIGHLIGHT DE ARRASTAR
   const [activeDailyDrag, setActiveDailyDrag] = useState(null);
 
   const loadDataFromCloud = async (user) => {
@@ -388,6 +390,7 @@ export default function App() {
     });
   }, []);
 
+  // --- MOTOR DE LEMBRETES UNIFICADO (Agenda + Foco) ---
   const todayObj = new Date(); 
   todayObj.setHours(0, 0, 0, 0);
   const todayStr = new Date(todayObj.getTime() - (todayObj.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
@@ -533,29 +536,36 @@ export default function App() {
   };
   const handleDragEnd = (e) => { e.stopPropagation(); if (draggingId.current) hapticFeedback(20); draggingId.current = null; };
 
+  // DRAG AND DROP DIÁRIO (FOCO) + HIGHLIGHT MAGNÉTICO
   const draggingDailyId = useRef(null);
+  
   const handleDailyDragStart = (e, id) => {
     e.stopPropagation();
     draggingDailyId.current = id;
     setActiveDailyDrag(id);
     hapticFeedback(20);
   };
+
   const handleDailyDragMove = (e) => {
     if (!draggingDailyId.current) return;
     e.preventDefault();
     const isMouse = typeof e?.type === 'string' && e.type.includes('mouse');
     const clientX = isMouse ? e.clientX : (e?.touches?.[0]?.clientX || 0);
     const clientY = isMouse ? e.clientY : (e?.touches?.[0]?.clientY || 0);
+
     const targetElement = document.elementFromPoint(clientX, clientY);
     const dropZone = targetElement?.closest('[data-daily-drag-id]');
+
     if (dropZone && dropZone.dataset.dailyDragId !== String(draggingDailyId.current)) {
       const targetId = Number(dropZone.dataset.dailyDragId);
+
       setDailyTasks(prev => {
         const activeStr = selectedDate ? selectedDate.toISOString().split('T')[0] : todayStr;
         const todayList = prev[activeStr] || [];
         const arr = [...todayList];
         const idx1 = arr.findIndex(t => t && t.id === draggingDailyId.current);
         const idx2 = arr.findIndex(t => t && t.id === targetId);
+
         if (idx1 >= 0 && idx2 >= 0) {
           const temp = arr[idx1];
           arr.splice(idx1, 1);
@@ -567,6 +577,7 @@ export default function App() {
       hapticFeedback(15);
     }
   };
+
   const handleDailyDragEnd = (e) => {
     e.stopPropagation();
     if (draggingDailyId.current) hapticFeedback(20);
@@ -592,6 +603,7 @@ export default function App() {
     setDeletePrompt(null);
   };
 
+  // SALVAR EDIÇÃO (AGORA COM TRANSFERÊNCIA DE DIAS PARA O FOCO)
   const handleSaveSimpleEdit = (e) => {
     e.preventDefault();
     hapticFeedback(30);
@@ -605,9 +617,37 @@ export default function App() {
       setPortfolioCategories(portfolioCategories.map(c => c?.id === editPrompt.id ? { ...c, label: editPrompt.label } : c));
     } else if (editPrompt.type === 'dailyTask') {
       setDailyTasks(prev => {
-        const dStr = editPrompt.dateStr;
-        const dayList = prev[dStr] || [];
-        return { ...prev, [dStr]: dayList.map(t => t?.id === editPrompt.id ? { ...t, text: editPrompt.label } : t) };
+        const newState = { ...prev };
+        const originalDate = editPrompt.originalDateStr;
+        const targetDate = editPrompt.dateStr;
+
+        const oldList = newState[originalDate] || [];
+        const taskIndex = oldList.findIndex(t => t?.id === editPrompt.id);
+        
+        if (taskIndex > -1) {
+          const taskToMove = { 
+             ...oldList[taskIndex], 
+             text: editPrompt.label, 
+             time: editPrompt.time 
+          };
+          
+          if (originalDate === targetDate) {
+            // Mesmo dia, só atualiza texto e hora
+            const newList = [...oldList];
+            newList[taskIndex] = taskToMove;
+            newState[originalDate] = newList;
+          } else {
+            // Muda de dia (Reprogramação)
+            const newListOld = [...oldList];
+            newListOld.splice(taskIndex, 1); // Tira do dia antigo
+            newState[originalDate] = newListOld;
+            
+            const newListTarget = [...(newState[targetDate] || [])];
+            newListTarget.push(taskToMove); // Põe no dia novo
+            newState[targetDate] = newListTarget;
+          }
+        }
+        return newState;
       });
     }
     setEditPrompt(null);
@@ -802,7 +842,7 @@ export default function App() {
                     return (
                     <div key={`rt_${task.id || Math.random()}`} data-daily-drag-id={task.id} className={dragClasses}>
                       <SwipeableItem 
-                        onEdit={() => setEditPrompt({ type: 'dailyTask', id: task.id, label: safeText, dateStr: todayStr })} 
+                        onEdit={() => setEditPrompt({ type: 'dailyTask', id: task.id, label: safeText, originalDateStr: todayStr, dateStr: todayStr, time: task.time || '' })} 
                         onDeleteRequest={() => setDeletePrompt({ type: 'dailyTask', id: task.id, title: safeText, dateStr: todayStr })} 
                         frontClass="bg-slate-800/80 border-slate-700/80 p-3.5 flex items-center justify-between" 
                         wrapperClass="mb-0"
@@ -1097,7 +1137,7 @@ export default function App() {
                   return(
                   <div key={`rt_foco_${task.id}`} data-daily-drag-id={task.id} className={dragClasses}>
                     <SwipeableItem 
-                      onEdit={() => setEditPrompt({ type: 'dailyTask', id: task.id, label: safeText, dateStr: dateStr })} 
+                      onEdit={() => setEditPrompt({ type: 'dailyTask', id: task.id, label: safeText, originalDateStr: dateStr, dateStr: dateStr, time: task.time || '' })} 
                       onDeleteRequest={() => setDeletePrompt({ type: 'dailyTask', id: task.id, title: safeText, dateStr: dateStr })} 
                       frontClass="bg-slate-800/80 border-slate-700/80 p-3.5 flex items-center justify-between" 
                       wrapperClass="mb-0"
@@ -1341,13 +1381,13 @@ export default function App() {
               </div>
 
               <div className="p-4 border-t border-slate-800">
-                <p className="text-center text-[10px] text-slate-500 mt-4 uppercase tracking-widest">Planner Full v2.4.3 (Swipe Foco)</p>
+                <p className="text-center text-[10px] text-slate-500 mt-4 uppercase tracking-widest">Planner Full v2.4.4 (Reprogramar Foco)</p>
               </div>
             </div>
           </div>
         )}
 
-        {/* MODAIS DELETE / EDIT */}
+        {/* MODAIS DELETE / EDIT (AGORA INTELIGENTE) */}
         {deletePrompt && (
           <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
             <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-[320px] border border-slate-700 shadow-2xl">
@@ -1367,8 +1407,30 @@ export default function App() {
         {editPrompt && (
           <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
             <form onSubmit={handleSaveSimpleEdit} className="bg-slate-800 rounded-2xl p-6 w-full max-w-[320px] border border-slate-700 shadow-2xl">
-              <h3 className="text-xl font-bold text-white mb-4">Editar {editPrompt.type === 'dailyTask' ? 'compromisso' : editPrompt.type}</h3>
-              <input type="text" required autoFocus className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:border-blue-500 outline-none mb-6" value={editPrompt.label} onChange={e => setEditPrompt({...editPrompt, label: e.target.value})} />
+              <h3 className="text-xl font-bold text-white mb-4">
+                Editar {editPrompt.type === 'dailyTask' ? 'Compromisso' : editPrompt.type === 'portfolioCat' ? 'Investimento' : editPrompt.type}
+              </h3>
+              
+              <div className="space-y-4 mb-6">
+                <div>
+                  {editPrompt.type === 'dailyTask' && <label className="text-xs text-slate-400 font-bold mb-1 block tracking-wider">TÍTULO</label>}
+                  <input type="text" required autoFocus className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:border-blue-500 outline-none" value={editPrompt.label} onChange={e => setEditPrompt({...editPrompt, label: e.target.value})} />
+                </div>
+
+                {editPrompt.type === 'dailyTask' && (
+                  <div className="flex gap-3">
+                    <div className="flex-1">
+                       <label className="text-xs text-slate-400 font-bold mb-1 block tracking-wider">DATA</label>
+                       <input type="date" required className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:border-blue-500 outline-none color-scheme-dark" value={editPrompt.dateStr} onChange={e => setEditPrompt({...editPrompt, dateStr: e.target.value})} />
+                    </div>
+                    <div className="flex-1">
+                       <label className="text-xs text-slate-400 font-bold mb-1 block tracking-wider">HORA</label>
+                       <input type="time" className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:border-blue-500 outline-none color-scheme-dark" value={editPrompt.time || ''} onChange={e => setEditPrompt({...editPrompt, time: e.target.value})} />
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="flex gap-3">
                 <button type="button" onClick={() => setEditPrompt(null)} className="flex-1 py-3 rounded-xl bg-slate-700 text-white font-medium">Cancelar</button>
                 <button type="submit" className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-medium">Salvar</button>
@@ -1388,6 +1450,7 @@ export default function App() {
     </div>
   );
 }
+
 
 
 
