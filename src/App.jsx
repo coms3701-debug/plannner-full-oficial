@@ -319,7 +319,6 @@ export default function App() {
   const [showAddHabit, setShowAddHabit] = useState(false);
   const [newHabitLabel, setNewHabitLabel] = useState('');
   
-  // --- NOVOS ESTADOS PARA O COMPROMISSO RÁPIDO (FOCO) ---
   const [newDailyTask, setNewDailyTask] = useState('');
   const [newDailyTaskTime, setNewDailyTaskTime] = useState('');
   const [newDailyTaskReminder, setNewDailyTaskReminder] = useState(false);
@@ -330,7 +329,6 @@ export default function App() {
   const [deletePrompt, setDeletePrompt] = useState(null); 
   const [editPrompt, setEditPrompt] = useState(null); 
 
-  // HIGHLIGHT DE ARRASTAR
   const [activeDailyDrag, setActiveDailyDrag] = useState(null);
 
   const loadDataFromCloud = async (user) => {
@@ -370,11 +368,8 @@ export default function App() {
     }, 2000);
   }, [tasks, taskCategories, habitsList, habits, dailyTasks, portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance, firebaseUser]);
 
-  // INJEÇÃO BLINDADA DO ÍCONE E PWA
   useEffect(() => {
     document.title = "Planner Full";
-    
-    // Injetar Tags de Meta (Geral)
     const metaTags = [
       { name: "apple-mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
@@ -391,25 +386,8 @@ export default function App() {
       }
       tag.content = content;
     });
-
-    // Injetar Forçadamente os Links do Ícone (Resolve o PWA Preto)
-    const linkTags = [
-      { rel: "apple-touch-icon", href: "/icon.png" }, // <--- FORÇA O IOS A LER A SUA IMAGEM
-      { rel: "icon", href: "/icon.png" }
-    ];
-    linkTags.forEach(({ rel, href }) => {
-      let tag = document.querySelector(`link[rel="${rel}"]`);
-      if (!tag) {
-        tag = document.createElement('link');
-        tag.rel = rel;
-        document.head.appendChild(tag);
-      }
-      tag.href = href;
-    });
-
   }, []);
 
-  // --- MOTOR DE LEMBRETES UNIFICADO (Agenda + Foco) ---
   const todayObj = new Date(); 
   todayObj.setHours(0, 0, 0, 0);
   const todayStr = new Date(todayObj.getTime() - (todayObj.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
@@ -555,7 +533,6 @@ export default function App() {
   };
   const handleDragEnd = (e) => { e.stopPropagation(); if (draggingId.current) hapticFeedback(20); draggingId.current = null; };
 
-  // DRAG AND DROP DIÁRIO (FOCO) + HIGHLIGHT MAGNÉTICO
   const draggingDailyId = useRef(null);
   
   const handleDailyDragStart = (e, id) => {
@@ -622,7 +599,6 @@ export default function App() {
     setDeletePrompt(null);
   };
 
-  // SALVAR EDIÇÃO (AGORA COM TRANSFERÊNCIA DE DIAS PARA O FOCO)
   const handleSaveSimpleEdit = (e) => {
     e.preventDefault();
     hapticFeedback(30);
@@ -651,18 +627,16 @@ export default function App() {
           };
           
           if (originalDate === targetDate) {
-            // Mesmo dia, só atualiza texto e hora
             const newList = [...oldList];
             newList[taskIndex] = taskToMove;
             newState[originalDate] = newList;
           } else {
-            // Muda de dia (Reprogramação)
             const newListOld = [...oldList];
-            newListOld.splice(taskIndex, 1); // Tira do dia antigo
+            newListOld.splice(taskIndex, 1);
             newState[originalDate] = newListOld;
             
             const newListTarget = [...(newState[targetDate] || [])];
-            newListTarget.push(taskToMove); // Põe no dia novo
+            newListTarget.push(taskToMove); 
             newState[targetDate] = newListTarget;
           }
         }
@@ -822,10 +796,6 @@ export default function App() {
     }
   };
 
-  // ==========================================
-  // RENDERIZAÇÃO
-  // ==========================================
-  
   const renderDashboard = () => {
     try {
       return (
@@ -1400,13 +1370,13 @@ export default function App() {
               </div>
 
               <div className="p-4 border-t border-slate-800">
-                <p className="text-center text-[10px] text-slate-500 mt-4 uppercase tracking-widest">Planner Full v2.4.5 (PWA Fix)</p>
+                <p className="text-center text-[10px] text-slate-500 mt-4 uppercase tracking-widest">Planner Full v2.4.4 (Reprogramar Foco)</p>
               </div>
             </div>
           </div>
         )}
 
-        {/* MODAIS DELETE / EDIT */}
+        {/* MODAIS DELETE / EDIT (AGORA INTELIGENTE) */}
         {deletePrompt && (
           <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
             <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-[320px] border border-slate-700 shadow-2xl">
