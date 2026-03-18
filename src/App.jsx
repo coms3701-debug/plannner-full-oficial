@@ -344,7 +344,8 @@ export default function App() {
   projectId: "planner-full",
   storageBucket: "planner-full.firebasestorage.app",
   messagingSenderId: "904119329848",
-  appId: "1:904119329848:web:8b3e8a0ff8f7e4f419b2cd"    };
+  appId: "1:904119329848:web:8b3e8a0ff8f7e4f419b2cd"    
+    };
 
     let finalConfig = vercelFirebaseConfig;
     if (typeof __firebase_config !== 'undefined') {
