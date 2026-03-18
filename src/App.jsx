@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Home, CheckSquare, Activity, Briefcase, CalendarClock, Plus, Check, ChevronLeft, ChevronRight, 
   Trash2, Edit2, X, User, Settings, Star, Download, ListTodo, CheckCircle2,
-  Cloud, CloudOff, RefreshCw, GripVertical, BellRing, AlertCircle, Volume2, Clock
+  Cloud, CloudOff, RefreshCw, GripVertical, BellRing, AlertCircle, Volume2, Clock, UploadCloud, Copy
 } from 'lucide-react';
 
 // --- IMPORTS DO FIREBASE ---
@@ -141,7 +141,6 @@ const SwipeableItem = ({ onEdit, onDeleteRequest, children, frontClass = "bg-sla
 
   const handleStart = (e) => {
     if (isDragDisabled || !e) return;
-    
     try {
       const tagName = typeof e?.target?.tagName === 'string' ? e.target.tagName.toLowerCase() : '';
       if (['input', 'textarea', 'button', 'select'].includes(tagName)) return;
@@ -167,7 +166,6 @@ const SwipeableItem = ({ onEdit, onDeleteRequest, children, frontClass = "bg-sla
     const diffX = clientX - startX.current;
     const diffY = clientY - startY.current;
 
-    // Se rolar mais para baixo do que para os lados, cancela o swipe horizontal
     if (Math.abs(diffY) > Math.abs(diffX) && Math.abs(diffY) > 10) {
       isDragging.current = false;
       setOffset(0);
@@ -218,31 +216,20 @@ const SwipeHint = () => (
   </div>
 );
 
-// ESCUDO ANTI-CRASH
 class TabErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
     this.state = { hasError: false, errorMsg: '' };
   }
-  static getDerivedStateFromError(error) {
-    return { hasError: true, errorMsg: error.toString() };
-  }
+  static getDerivedStateFromError(error) { return { hasError: true, errorMsg: error.toString() }; }
   render() {
     if (this.state.hasError) {
       return (
         <div className="p-6 bg-red-900/20 border border-red-500/50 rounded-2xl text-center mt-10 animate-in fade-in">
           <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
           <h2 className="text-red-400 font-black text-xl mb-2">Ops! Erro na Aba</h2>
-          <p className="text-sm text-slate-300 mb-4">Ocorreu um erro interno de renderização.</p>
-          <div className="p-3 bg-black/50 rounded-lg text-xs text-red-300 font-mono text-left overflow-auto mb-6 max-h-32">
-            {this.state.errorMsg}
-          </div>
-          <button 
-            onClick={() => window.location.reload()}
-            className="w-full bg-red-600 hover:bg-red-500 text-white py-3 rounded-xl font-bold shadow-lg shadow-red-600/30"
-          >
-            Recarregar Página
-          </button>
+          <p className="text-sm text-slate-300 mb-4">Ocorreu um erro interno.</p>
+          <button onClick={() => window.location.reload()} className="w-full bg-red-600 hover:bg-red-500 text-white py-3 rounded-xl font-bold">Recarregar Página</button>
         </div>
       );
     }
@@ -290,6 +277,33 @@ export default function App() {
     } catch(err) {}
   }, []);
 
+  // INJEÇÃO FORÇADA DE ÍCONE APPLE (Para resolver o "P" preto)
+  useEffect(() => {
+    document.title = "Planner Full";
+    const metaTags = [
+      { name: "apple-mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
+      { name: "apple-mobile-web-app-title", content: "Planner Full" },
+      { name: "theme-color", content: "#0f172a" },
+      { name: "mobile-web-app-capable", content: "yes" }
+    ];
+    metaTags.forEach(({ name, content }) => {
+      let tag = document.querySelector(`meta[name="${name}"]`);
+      if (!tag) { tag = document.createElement('meta'); tag.name = name; document.head.appendChild(tag); }
+      tag.content = content;
+    });
+
+    const linkTags = [
+      { rel: "apple-touch-icon", href: "/icon.png" },
+      { rel: "icon", href: "/icon.png" }
+    ];
+    linkTags.forEach(({ rel, href }) => {
+      let tag = document.querySelector(`link[rel="${rel}"]`);
+      if (!tag) { tag = document.createElement('link'); tag.rel = rel; document.head.appendChild(tag); }
+      tag.href = href;
+    });
+  }, []);
+
   // ESTADOS V3
   const [tasksRaw, setTasks] = useLocalStorage('planner_v3_tasks', []);
   const [taskCategoriesRaw, setTaskCategories] = useLocalStorage('planner_v3_categories', INITIAL_CATEGORIES);
@@ -319,7 +333,6 @@ export default function App() {
   const [showAddHabit, setShowAddHabit] = useState(false);
   const [newHabitLabel, setNewHabitLabel] = useState('');
   
-  // --- NOVOS ESTADOS PARA O COMPROMISSO RÁPIDO (FOCO) ---
   const [newDailyTask, setNewDailyTask] = useState('');
   const [newDailyTaskTime, setNewDailyTaskTime] = useState('');
   const [newDailyTaskReminder, setNewDailyTaskReminder] = useState(false);
@@ -330,8 +343,10 @@ export default function App() {
   const [deletePrompt, setDeletePrompt] = useState(null); 
   const [editPrompt, setEditPrompt] = useState(null); 
 
-  // HIGHLIGHT DE ARRASTAR
   const [activeDailyDrag, setActiveDailyDrag] = useState(null);
+  
+  // ESTADOS DO RESGATE DE DADOS
+  const [importCodeStr, setImportCodeStr] = useState('');
 
   const loadDataFromCloud = async (user) => {
     if (!dbRef.current || !user) return;
@@ -370,27 +385,6 @@ export default function App() {
     }, 2000);
   }, [tasks, taskCategories, habitsList, habits, dailyTasks, portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance, firebaseUser]);
 
-  useEffect(() => {
-    document.title = "Planner Full";
-    const metaTags = [
-      { name: "apple-mobile-web-app-capable", content: "yes" },
-      { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
-      { name: "apple-mobile-web-app-title", content: "Planner Full" },
-      { name: "theme-color", content: "#0f172a" },
-      { name: "mobile-web-app-capable", content: "yes" }
-    ];
-    metaTags.forEach(({ name, content }) => {
-      let tag = document.querySelector(`meta[name="${name}"]`);
-      if (!tag) {
-        tag = document.createElement('meta');
-        tag.name = name;
-        document.head.appendChild(tag);
-      }
-      tag.content = content;
-    });
-  }, []);
-
-  // --- MOTOR DE LEMBRETES UNIFICADO (Agenda + Foco) ---
   const todayObj = new Date(); 
   todayObj.setHours(0, 0, 0, 0);
   const todayStr = new Date(todayObj.getTime() - (todayObj.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
@@ -398,7 +392,6 @@ export default function App() {
   useEffect(() => {
     const interval = setInterval(() => {
       const now = new Date();
-      
       let updatedTasks = false;
       const newTasks = tasks.map(task => {
         if (!task || task.completed || !task.hasReminder || !task.dueDate || !task.dueTime) return task;
@@ -454,7 +447,6 @@ export default function App() {
     if (completed) return 'completed';
     const dueDate = parseLocalDate(dueDateStr);
     const diffTime = Math.ceil((dueDate - todayObj) / (1000 * 60 * 60 * 24));
-    
     if (diffTime < 0) return 'overdue';
     if (diffTime === 0) return 'today';
     if (diffTime <= 3) return 'upcoming-urgent'; 
@@ -513,10 +505,8 @@ export default function App() {
     const isMouse = typeof e?.type === 'string' && e.type.includes('mouse');
     const clientX = isMouse ? e.clientX : (e?.touches?.[0]?.clientX || 0);
     const clientY = isMouse ? e.clientY : (e?.touches?.[0]?.clientY || 0);
-    
     const targetElement = document.elementFromPoint(clientX, clientY);
     const dropZone = targetElement?.closest('[data-drag-id]');
-    
     if (dropZone && dropZone.dataset.dragId !== String(draggingId.current)) {
       const targetId = Number(dropZone.dataset.dragId);
       setTasks(prev => {
@@ -536,36 +526,29 @@ export default function App() {
   };
   const handleDragEnd = (e) => { e.stopPropagation(); if (draggingId.current) hapticFeedback(20); draggingId.current = null; };
 
-  // DRAG AND DROP DIÁRIO (FOCO) + HIGHLIGHT MAGNÉTICO
   const draggingDailyId = useRef(null);
-  
   const handleDailyDragStart = (e, id) => {
     e.stopPropagation();
     draggingDailyId.current = id;
     setActiveDailyDrag(id);
     hapticFeedback(20);
   };
-
   const handleDailyDragMove = (e) => {
     if (!draggingDailyId.current) return;
     e.preventDefault();
     const isMouse = typeof e?.type === 'string' && e.type.includes('mouse');
     const clientX = isMouse ? e.clientX : (e?.touches?.[0]?.clientX || 0);
     const clientY = isMouse ? e.clientY : (e?.touches?.[0]?.clientY || 0);
-
     const targetElement = document.elementFromPoint(clientX, clientY);
     const dropZone = targetElement?.closest('[data-daily-drag-id]');
-
     if (dropZone && dropZone.dataset.dailyDragId !== String(draggingDailyId.current)) {
       const targetId = Number(dropZone.dataset.dailyDragId);
-
       setDailyTasks(prev => {
         const activeStr = selectedDate ? selectedDate.toISOString().split('T')[0] : todayStr;
         const todayList = prev[activeStr] || [];
         const arr = [...todayList];
         const idx1 = arr.findIndex(t => t && t.id === draggingDailyId.current);
         const idx2 = arr.findIndex(t => t && t.id === targetId);
-
         if (idx1 >= 0 && idx2 >= 0) {
           const temp = arr[idx1];
           arr.splice(idx1, 1);
@@ -577,7 +560,6 @@ export default function App() {
       hapticFeedback(15);
     }
   };
-
   const handleDailyDragEnd = (e) => {
     e.stopPropagation();
     if (draggingDailyId.current) hapticFeedback(20);
@@ -603,7 +585,6 @@ export default function App() {
     setDeletePrompt(null);
   };
 
-  // SALVAR EDIÇÃO (SEM TRANSFERÊNCIA)
   const handleSaveSimpleEdit = (e) => {
     e.preventDefault();
     hapticFeedback(30);
@@ -772,6 +753,50 @@ export default function App() {
     if (activeTab !== tabId) {
       hapticFeedback(25);
       setActiveTab(tabId);
+    }
+  };
+
+  // LÓGICA DE RESGATE DE DADOS (NOVA)
+  const generateExportCode = () => {
+    try {
+      const dataToExport = { tasks, taskCategories, habitsList, habits, dailyTasks, portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance };
+      const rawJson = JSON.stringify(dataToExport);
+      // Cria um Base64 seguro para copiar
+      const encoded = btoa(unescape(encodeURIComponent(rawJson)));
+      
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(encoded);
+        alert("CÓDIGO COPIADO! Abra agora o aplicativo do ícone preto, vá ao mesmo menu e Cole o código para restaurar.");
+      } else {
+        alert("O seu navegador bloqueou a cópia automática. Por favor, copie manualmente o código que aparecerá no ecrã.");
+        setImportCodeStr(encoded); // Mostra na caixa se falhar
+      }
+    } catch(err) {
+      alert("Erro ao gerar código de backup.");
+    }
+  };
+
+  const processImportCode = () => {
+    if (!importCodeStr.trim()) return alert("Cole o código primeiro!");
+    try {
+      const decodedJson = decodeURIComponent(escape(atob(importCodeStr.trim())));
+      const data = JSON.parse(decodedJson);
+      
+      if (data.tasks) setTasks(data.tasks);
+      if (data.taskCategories) setTaskCategories(data.taskCategories);
+      if (data.habitsList) setHabitsList(data.habitsList);
+      if (data.habits) setHabits(data.habits);
+      if (data.dailyTasks) setDailyTasks(data.dailyTasks);
+      if (data.portfolioCategories) setPortfolioCategories(data.portfolioCategories);
+      if (data.portfolio) setPortfolio(data.portfolio);
+      if (data.portfolioUpdateDate) setPortfolioUpdateDate(data.portfolioUpdateDate);
+      if (data.prevPortfolioBalance) setPrevPortfolioBalance(data.prevPortfolioBalance);
+      
+      alert("DADOS RESTAURADOS COM SUCESSO! A Nuvem já está a guardar tudo neste novo acesso.");
+      setImportCodeStr('');
+      setIsSidebarOpen(false);
+    } catch(err) {
+      alert("Código de restauração inválido ou corrompido. Tente copiar novamente do Safari.");
     }
   };
 
@@ -1292,7 +1317,7 @@ export default function App() {
           </button>
         </div>
 
-        {/* ÁREA CENTRAL C/ BOUNDARY INDIVIDUAL */}
+        {/* ÁREA CENTRAL */}
         <main className="flex-1 overflow-y-auto p-6 scroll-smooth">
           {activeTab === 'dashboard' && <TabErrorBoundary storageKeys={['planner_v3_tasks', 'planner_v3_portfolio']}>{renderDashboard()}</TabErrorBoundary>}
           {activeTab === 'tasks' && <TabErrorBoundary storageKeys={['planner_v3_tasks', 'planner_v3_categories']}>{renderTasks()}</TabErrorBoundary>}
@@ -1322,7 +1347,7 @@ export default function App() {
           })}
         </nav>
 
-        {/* SIDEBAR MODAL */}
+        {/* SIDEBAR MODAL - AGORA COM FERRAMENTA DE RESGATE */}
         {isSidebarOpen && (
           <div className="absolute inset-0 z-[100] flex justify-end overflow-hidden">
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setIsSidebarOpen(false)}></div>
@@ -1346,14 +1371,37 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-4 space-y-1">
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 <button onClick={requestNotificationPermission} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-slate-300 transition-colors">
                   <BellRing className="w-5 h-5 text-slate-400" /> <span className="font-medium text-left">Ativar Notificações</span>
                 </button>
+
+                {/* --- ÁREA DE RESGATE DE DADOS --- */}
+                <div className="pt-4 border-t border-slate-800">
+                  <h3 className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-3 flex items-center gap-2"><UploadCloud className="w-4 h-4"/> Transferir Dados</h3>
+                  
+                  <button onClick={generateExportCode} className="w-full bg-slate-800 hover:bg-slate-700 text-white p-3 rounded-xl text-sm font-medium transition-colors mb-3 flex items-center justify-center gap-2 border border-slate-700">
+                    <Copy className="w-4 h-4"/> 1. Copiar Meus Dados
+                  </button>
+                  
+                  <div className="flex flex-col gap-2">
+                    <input 
+                      type="text" 
+                      placeholder="Cole aqui o código..." 
+                      value={importCodeStr} 
+                      onChange={e => setImportCodeStr(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-slate-300 focus:outline-none focus:border-emerald-500"
+                    />
+                    <button onClick={processImportCode} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white p-2.5 rounded-xl text-sm font-bold transition-colors shadow-lg shadow-emerald-600/20">
+                      2. Restaurar Dados
+                    </button>
+                  </div>
+                </div>
+
               </div>
 
               <div className="p-4 border-t border-slate-800">
-                <p className="text-center text-[10px] text-slate-500 mt-4 uppercase tracking-widest">Planner Full v2.4.3</p>
+                <p className="text-center text-[10px] text-slate-500 mt-2 uppercase tracking-widest">Planner Full v2.4.6</p>
               </div>
             </div>
           </div>
@@ -1400,13 +1448,6 @@ export default function App() {
     </div>
   );
 }
-
-
-
-
-
-
-
 
 
 
