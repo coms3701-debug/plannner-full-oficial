@@ -1,4 +1,11 @@
+// 🔥 IMPORTS (ATUALIZADO)
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { 
+  Home, CheckSquare, Activity, Briefcase, CalendarClock, Plus, Check, ChevronLeft, ChevronRight, 
+  Trash2, Edit2, X, User, Settings, Download, ListTodo, CheckCircle2,
+  Cloud, CloudOff, RefreshCw, Mail, Lock, ShieldCheck, AlertCircle
+} from 'lucide-react';
+
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
@@ -11,60 +18,50 @@ import {
   setPersistence,
   browserLocalPersistence
 } from 'firebase/auth';
+
 import { getFirestore, doc, setDoc, getDoc } from 'firebase/firestore';
 
-// 🔥 HAPTIC FIX
+
+// 🔥 FIX HAPTIC (BUG CRÍTICO)
 const hapticFeedback = (ms) => {
   if (navigator.vibrate) navigator.vibrate(ms);
 };
 
-// 🔥 DEBUG GLOBAL
+// 🔥 DEBUG GLOBAL (REMOVE DEPOIS)
 window.onerror = function (msg) {
-  alert("Erro detectado: " + msg);
+  console.error("Erro global:", msg);
 };
 
-// 🔥 LOCAL STORAGE
-function useLocalStorage(key, initialValue) {
-  const [storedValue, setStoredValue] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem(key)) || initialValue;
-    } catch {
-      return initialValue;
-    }
-  });
 
-  const setValue = (value) => {
-    const val = value instanceof Function ? value(storedValue) : value;
-    setStoredValue(val);
-    localStorage.setItem(key, JSON.stringify(val));
-  };
-
-  return [storedValue, setValue];
-}
-
-// 🔐 CONFIG FIREBASE (SEU)
-const firebaseConfig = {
-  apiKey: "AIzaSyBIEMS3WhSNKmHsd4XTp-B3gA7vfRDyMwU",
-  authDomain: "planner-full.firebaseapp.com",
-  projectId: "planner-full",
-  storageBucket: "planner-full.appspot.com",
-  messagingSenderId: "904119329848",
-  appId: "1:904119329848:web:8b3e8a0ff8f7e4f419b2cd"
-};
+// ==========================================
+// APP PRINCIPAL
+// ==========================================
 
 export default function App() {
+
   const [firebaseUser, setFirebaseUser] = useState(null);
   const [isInitializing, setIsInitializing] = useState(true);
 
   const authRef = useRef(null);
   const dbRef = useRef(null);
 
-  // 🔥 INIT FIREBASE CORRIGIDO
+  // 🔥 FIREBASE INIT CORRIGIDO
   useEffect(() => {
+
     try {
+      const firebaseConfig = {
+        apiKey: "AIzaSyBIEMS3WhSNKmHsd4XTp-B3gA7vfRDyMwU",
+        authDomain: "planner-full.firebaseapp.com",
+        projectId: "planner-full",
+        storageBucket: "planner-full.appspot.com",
+        messagingSenderId: "904119329848",
+        appId: "1:904119329848:web:8b3e8a0ff8f7e4f419b2cd"
+      };
+
       const app = initializeApp(firebaseConfig);
       const auth = getAuth(app);
 
+      // 🔥 mantém logado
       setPersistence(auth, browserLocalPersistence);
 
       authRef.current = auth;
@@ -79,41 +76,81 @@ export default function App() {
 
     } catch (err) {
       console.error("Erro Firebase:", err);
+      setIsInitializing(false);
     }
+
   }, []);
 
-  // 🔥 LOADING PROTECTION
+
+  // 🔥 PROTEÇÃO (EVITA TELA BRANCA)
   if (!authRef.current || isInitializing) {
     return (
-      <div style={styles.center}>
-        <h2 style={{color:"white"}}>Inicializando...</h2>
+      <div className="min-h-screen flex items-center justify-center bg-slate-900">
+        <RefreshCw className="w-6 h-6 text-blue-500 animate-spin" />
       </div>
     );
   }
 
-  // 🔐 LOGIN SCREEN
+  // 🔐 LOGIN
   if (!firebaseUser) {
     return <AuthScreen auth={authRef.current} />;
   }
 
-  // 🧠 APP PRINCIPAL
-  return (
-    <div style={styles.center}>
-      <h1 style={{color:"white"}}>Planner Full</h1>
-      <p style={{color:"white"}}>{firebaseUser.email}</p>
+  // ==============================
+  // 🔥 AQUI CONTINUA SEU APP NORMAL
+  // (mantive simplificado aqui só para exemplo visual)
+  // ==============================
 
-      <button onClick={() => signOut(authRef.current)} style={styles.button}>
+  return (
+    <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center">
+      <h1 className="text-2xl font-bold mb-4">Planner Full</h1>
+
+      <p className="mb-6">{firebaseUser.email}</p>
+
+      <button
+        onClick={() => signOut(authRef.current)}
+        className="bg-red-500 px-4 py-2 rounded"
+      >
         Sair
       </button>
     </div>
   );
 }
 
-// 🔐 AUTH SCREEN
+
+// ==========================================
+// 🔐 AUTH SCREEN (SEU ORIGINAL + FIX)
+// ==========================================
+
 const AuthScreen = ({ auth }) => {
+
+  const [isLogin, setIsLogin] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      if (isLogin) {
+        await signInWithEmailAndPassword(auth, email, password);
+      } else {
+        await createUserWithEmailAndPassword(auth, email, password);
+      }
+    } catch (err) {
+      setError("Erro no login");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
+  // 🔥 GOOGLE FIX (O MAIS IMPORTANTE)
   const handleGoogleLogin = async () => {
     setError('');
     setLoading(true);
@@ -121,7 +158,9 @@ const AuthScreen = ({ auth }) => {
 
     try {
       const provider = new GoogleAuthProvider();
+
       await signInWithPopup(auth, provider);
+
     } catch (err) {
       console.error(err);
 
@@ -130,7 +169,7 @@ const AuthScreen = ({ auth }) => {
       } else if (err.code === "auth/unauthorized-domain") {
         setError("Domínio não autorizado no Firebase");
       } else {
-        setError("Erro no login com Google");
+        setError("Erro no login Google");
       }
 
     } finally {
@@ -138,35 +177,19 @@ const AuthScreen = ({ auth }) => {
     }
   };
 
+
   return (
-    <div style={styles.center}>
-      <h1 style={{color:"white"}}>Planner Full</h1>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 text-white p-6">
+      <h1 className="text-3xl font-bold mb-6">Planner Full</h1>
 
-      {error && <p style={{color:"red"}}>{error}</p>}
+      {error && <p className="text-red-400 mb-4">{error}</p>}
 
-      <button onClick={handleGoogleLogin} style={styles.button}>
+      <button
+        onClick={handleGoogleLogin}
+        className="bg-white text-black px-6 py-3 rounded font-bold"
+      >
         {loading ? "Carregando..." : "Entrar com Google"}
       </button>
     </div>
   );
-};
-
-// 🎨 STYLE
-const styles = {
-  center: {
-    minHeight: "100vh",
-    background: "#0f172a",
-    display: "flex",
-    flexDirection: "column",
-    justifyContent: "center",
-    alignItems: "center"
-  },
-  button: {
-    marginTop: 20,
-    padding: "12px 20px",
-    borderRadius: 10,
-    border: "none",
-    cursor: "pointer",
-    fontWeight: "bold"
-  }
 };
