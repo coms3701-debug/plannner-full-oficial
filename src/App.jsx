@@ -14,7 +14,7 @@ import {
   createUserWithEmailAndPassword, 
   signOut,
   GoogleAuthProvider,
-  signInWithPopup
+signInWithRedirect
 } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc } from 'firebase/firestore';
 
@@ -187,21 +187,17 @@ const AuthScreen = ({ auth }) => {
     }
   };
 
-  const handleGoogleLogin = async () => {
+ const handleGoogleLogin = async () => {
     setError('');
     setLoading(true);
     hapticFeedback(30);
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      // O Redirect sai da app, vai ao Google e volta automaticamente
+      await signInWithRedirect(auth, provider); 
     } catch (err) {
       console.error(err);
-      if (err.code === 'auth/popup-closed-by-user') {
-        setError('Login pelo Google foi cancelado.');
-      } else {
-        setError('Erro com Google. Verifique se ativou o provedor Google no Firebase.');
-      }
-    } finally {
+      setError('Erro com Google. Verifique se ativou o provedor Google no Firebase.');
       setLoading(false);
     }
   };
