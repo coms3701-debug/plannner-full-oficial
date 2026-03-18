@@ -3,7 +3,7 @@ import {
   Home, CheckSquare, Activity, Briefcase, CalendarClock, Plus, Check, ChevronLeft, ChevronRight, 
   Trash2, Edit2, X, User, Settings, BellRing, AlertCircle, Clock, GripVertical,
   Cloud, CloudOff, RefreshCw, LogOut, Mail, Lock, ShieldCheck, ListTodo, CheckCircle2,
-  Eye, EyeOff // <-- NOVOS ÍCONES IMPORTADOS AQUI
+  Eye, EyeOff
 } from 'lucide-react';
 
 // --- IMPORTS DO FIREBASE ---
@@ -442,7 +442,7 @@ const AuthScreen = ({ auth }) => {
 
         <div className="mt-8 flex items-center justify-center gap-2 text-slate-500 opacity-60 text-[10px] uppercase font-bold tracking-widest">
           <ShieldCheck className="w-4 h-4" />
-          <span>Segurança Firebase (V4.0)</span>
+          <span>Segurança Firebase (V4.0 Oficial)</span>
         </div>
       </div>
     </div>
@@ -460,12 +460,16 @@ export default function App() {
 
   // --- CONFIGURAÇÃO DO GOOGLE FIREBASE ---
   const [firebaseUser, setFirebaseUser] = useState(null);
-  const [syncStatus, setSyncStatus] = useState('offline');
+  const [syncStatus, setSyncStatus] = useState('offline'); // 'offline', 'syncing', 'online'
+  
+  // --- NOVO: BLOQUEIO DE SINCRONIZAÇÃO (EVITA APAGAR DADOS) ---
+  const [isDataLoaded, setIsDataLoaded] = useState(false); 
+
   const dbRef = useRef(null);
   const authRef = useRef(null);
   const syncTimeoutRef = useRef(null);
 
-  // --- NOVO: ESTADO PARA OCULTAR SALDO (V4.0) ---
+  // --- ESTADO PARA OCULTAR SALDO (V4.0) ---
   const [isBalanceVisible, setIsBalanceVisible] = useLocalStorage('planner_v4_balance_visible', true);
 
   useEffect(() => {
@@ -504,7 +508,7 @@ export default function App() {
       setFirebaseUser(user);
       setIsInitializing(false);
       if (user) {
-        setSyncStatus('online');
+        setSyncStatus('syncing');
         loadDataFromCloud(user);
       }
     });
@@ -555,7 +559,6 @@ export default function App() {
     if (!dbRef.current || !user) return;
     setSyncStatus('syncing');
     try {
-      // IMPORTANTE: MANTIDO 'main_v3' PARA NÃO PERDER NENHUM DADO ANTERIOR
       const appId = typeof __app_id !== 'undefined' ? __app_id : 'planner-v3';
       const docPath = doc(dbRef.current, 'artifacts', appId, 'users', user.uid, 'plannerData', 'main_v3');
       const snapshot = await getDoc(docPath);
@@ -576,11 +579,15 @@ export default function App() {
     } catch (error) {
       console.error("Erro ao carregar da nuvem:", error);
       setSyncStatus('offline');
+    } finally {
+      // IMPORTANTE: Avisa o sistema que a leitura da nuvem já terminou
+      setIsDataLoaded(true);
     }
   };
 
   useEffect(() => {
-    if (!firebaseUser || !dbRef.current) return;
+    // SÓ GRAVA DEPOIS DE TER LIDO DA NUVEM (!isDataLoaded protege contra apagar dados)
+    if (!firebaseUser || !dbRef.current || !isDataLoaded) return;
 
     const saveDataToCloud = async () => {
       setSyncStatus('syncing');
@@ -602,7 +609,7 @@ export default function App() {
     clearTimeout(syncTimeoutRef.current);
     syncTimeoutRef.current = setTimeout(() => { saveDataToCloud(); }, 2000);
     return () => clearTimeout(syncTimeoutRef.current);
-  }, [tasks, taskCategories, habitsList, habits, dailyTasks, portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance, firebaseUser]);
+  }, [tasks, taskCategories, habitsList, habits, dailyTasks, portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance, firebaseUser, isDataLoaded]);
 
   // --- LOGOUT ---
   const handleLogout = async () => {
@@ -613,6 +620,7 @@ export default function App() {
       setHabits({});
       setDailyTasks({});
       setPortfolio({});
+      setIsDataLoaded(false); // Reseta a fechadura para o próximo login
     }
   };
 
