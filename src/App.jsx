@@ -294,14 +294,14 @@ const AuthScreen = ({ auth }) => {
     hapticFeedback(30);
     try {
       const provider = new GoogleAuthProvider();
-      // O método de Popup resolve o problema do redirecionamento infinito
+      // O método de Popup resolve o problema do redirecionamento infinito nos telemóveis
       await signInWithPopup(auth, provider); 
     } catch (err) {
       console.error(err);
       if (err.code === 'auth/popup-closed-by-user') {
         setError('O login com Google foi cancelado.');
       } else if (err.code === 'auth/popup-blocked') {
-        setError('Pop-up bloqueado. Use o botão de Email e Senha ou autorize pop-ups.');
+        setError('Pop-up bloqueado. O seu telemóvel não permite janelas flutuantes. Por favor, use Email e Senha.');
       } else {
         setError('Erro com o Google. O Firebase suporta o domínio atual?');
       }
@@ -527,13 +527,13 @@ export default function App() {
   const [editPrompt, setEditPrompt] = useState(null); 
   const [activeDailyDrag, setActiveDailyDrag] = useState(null);
 
-  // --- INTEGRAÇÃO COM FIRESTORE (BANCO DE DADOS) ---
+  // --- LÓGICA DE SINCRONIZAÇÃO COM A NUVEM ---
   const loadDataFromCloud = async (user) => {
     if (!dbRef.current || !user) return;
     setSyncStatus('syncing');
     try {
-      // Caminho fixo para garantir que os dados NUNCA se perdem
-      const docPath = doc(dbRef.current, 'artifacts', 'planner-v3', 'users', user.uid, 'plannerData', 'main_v3');
+      const appId = typeof __app_id !== 'undefined' ? __app_id : 'planner-v3';
+      const docPath = doc(dbRef.current, 'artifacts', appId, 'users', user.uid, 'plannerData', 'main_v3');
       const snapshot = await getDoc(docPath);
       
       if (snapshot.exists()) {
@@ -561,8 +561,8 @@ export default function App() {
     const saveDataToCloud = async () => {
       setSyncStatus('syncing');
       try {
-        // Caminho fixo para garantir que os dados NUNCA se perdem
-        const docPath = doc(dbRef.current, 'artifacts', 'planner-v3', 'users', firebaseUser.uid, 'plannerData', 'main_v3');
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'planner-v3';
+        const docPath = doc(dbRef.current, 'artifacts', appId, 'users', firebaseUser.uid, 'plannerData', 'main_v3');
         await setDoc(docPath, {
           tasks, taskCategories, habitsList, habits, dailyTasks, 
           portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance,
@@ -992,7 +992,7 @@ export default function App() {
 
       <div className="space-y-1">
         {tasks.length > 0 && !showAddTask && <SwipeHint />}
-        {dashboardAgendaTasks.map(task => {
+        {sortedTasksGlobally.map(task => {
           const status = getTaskStatus(task.dueDate, task.completed);
           const classStr = getStatusColors(status);
           const categoryObj = taskCategories.find(c => c.id === task.category);
