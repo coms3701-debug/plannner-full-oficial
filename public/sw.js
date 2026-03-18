@@ -11,7 +11,8 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = event.request.url;
 
-  // 1. BLINDAGEM DO BANCO DE DADOS: Ignora Firebase e Autenticação
+  // 1. BLINDAGEM DO FIREBASE E LOGIN: 
+  // O 'identitytoolkit' é a peça mágica que permite o Login funcionar!
   if (
     url.includes('firestore') || 
     url.includes('googleapis.com') || 
@@ -19,14 +20,13 @@ self.addEventListener('fetch', (event) => {
     url.includes('firebase') ||
     url.includes('gstatic.com')
   ) {
-    return; // Passa direto para a internet
+    return; // Passa direto para a internet e permite o Login
   }
 
-  // 2. MODO OFFLINE SEGURO para o resto da App
+  // 2. MODO OFFLINE SEGURO: 
   event.respondWith(
     fetch(event.request)
       .then((networkResponse) => {
-        // Se tem internet, guarda no cache para o futuro
         if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then((cache) => {
@@ -36,7 +36,6 @@ self.addEventListener('fetch', (event) => {
         return networkResponse;
       })
       .catch(() => {
-        // Se não tem internet, devolve o que tem no cache (Modo Voo)
         return caches.match(event.request);
       })
   );
