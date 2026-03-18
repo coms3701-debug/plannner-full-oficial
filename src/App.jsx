@@ -339,13 +339,12 @@ export default function App() {
   useEffect(() => {
     // ⚠️ ATENÇÃO: COLOQUE AS SUAS CHAVES DO FIREBASE DENTRO DESTE BLOCO!
     const vercelFirebaseConfig = {
-      apiKey: "", // <--- COLE AQUI
-      authDomain: "", // <--- COLE AQUI
-      projectId: "", // <--- COLE AQUI
-      storageBucket: "", // <--- COLE AQUI
-      messagingSenderId: "", // <--- COLE AQUI
-      appId: "" // <--- COLE AQUI
-    };
+       apiKey: "AIzaSyBIEMS3WhSNKmHsd4XTp-B3gA7vfRDyMwU",
+  authDomain: "planner-full.firebaseapp.com",
+  projectId: "planner-full",
+  storageBucket: "planner-full.firebasestorage.app",
+  messagingSenderId: "904119329848",
+  appId: "1:904119329848:web:8b3e8a0ff8f7e4f419b2cd"    };
 
     let finalConfig = vercelFirebaseConfig;
     if (typeof __firebase_config !== 'undefined') {
