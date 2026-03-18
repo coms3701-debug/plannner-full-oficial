@@ -14,7 +14,10 @@ import {
   createUserWithEmailAndPassword, 
   signOut,
   GoogleAuthProvider,
-  signInWithPopup
+  signInWithRedirect,
+  getRedirectResult,
+  setPersistence,
+  browserLocalPersistence
 } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc } from 'firebase/firestore';
 
@@ -256,7 +259,27 @@ const AuthScreen = ({ auth }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // Começa a carregar para capturar o retorno do Google
+
+  useEffect(() => {
+    // Tenta capturar o utilizador que volta do redirecionamento do Google
+    getRedirectResult(auth)
+      .then((result) => {
+        setLoading(false);
+        if (result) {
+           console.log("Login com Google bem-sucedido via redirect");
+        }
+      })
+      .catch((err) => {
+        console.error(err);
+        setLoading(false);
+        if (err.code === 'auth/operation-not-allowed') {
+          setError('ERRO: O método de login não está ativado no Firebase.');
+        } else {
+          setError('O Safari/iOS bloqueou o Google. Por favor, utilize Email e Senha abaixo.');
+        }
+      });
+  }, [auth]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -294,18 +317,11 @@ const AuthScreen = ({ auth }) => {
     hapticFeedback(30);
     try {
       const provider = new GoogleAuthProvider();
-      // O método de Popup resolve o problema do redirecionamento infinito nos telemóveis
-      await signInWithPopup(auth, provider); 
+      // O método Redirect com a persistência de LocalStorage evita o erro do SessionStorage no iOS
+      await signInWithRedirect(auth, provider); 
     } catch (err) {
       console.error(err);
-      if (err.code === 'auth/popup-closed-by-user') {
-        setError('O login com Google foi cancelado.');
-      } else if (err.code === 'auth/popup-blocked') {
-        setError('Pop-up bloqueado. O seu telemóvel não permite janelas flutuantes. Por favor, use Email e Senha.');
-      } else {
-        setError('Erro com o Google. O Firebase suporta o domínio atual?');
-      }
-    } finally {
+      setError('Erro ao iniciar. O Safari pode estar a bloquear.');
       setLoading(false);
     }
   };
@@ -474,6 +490,16 @@ export default function App() {
 
     const app = initializeApp(finalConfig);
     const auth = getAuth(app);
+    
+    // VACINA CONTRA O BLOQUEIO DE SESSIONSTORAGE DO IOS/SAFARI
+    setPersistence(auth, browserLocalPersistence)
+      .then(() => {
+         // Persistência configurada com sucesso
+      })
+      .catch((err) => {
+         console.warn("Aviso de persistência:", err);
+      });
+
     authRef.current = auth;
     dbRef.current = getFirestore(app);
 
