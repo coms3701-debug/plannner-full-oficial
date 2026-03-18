@@ -1,20 +1,3 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-body {
-  background-color: #0f172a;
-  color: #ffffff;
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-  -webkit-font-smoothing: antialiased;
-}
-
-
-3. Ficheiro: public/sw.js
-
-(O Service Worker que protege o Login do Google para não entrar em loop)
-
 const CACHE_NAME = 'planner-full-v3-cache-final';
 
 self.addEventListener('install', (event) => {
@@ -28,7 +11,7 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = event.request.url;
 
-  // BLINDAGEM TOTAL: Ignora Firebase e Google Auth para o Login funcionar perfeitamente
+  // BLINDAGEM TOTAL: Ignora Firebase e Google Auth para o Login funcionar
   if (
     url.includes('firestore') || 
     url.includes('googleapis.com') || 
@@ -38,7 +21,7 @@ self.addEventListener('fetch', (event) => {
     url.includes('accounts.google.com') ||
     url.includes('apis.google.com')
   ) {
-    return; // Passa direto para a internet e não bloqueia o login
+    return; 
   }
 
   // MODO OFFLINE SEGURO
@@ -58,4 +41,3 @@ self.addEventListener('fetch', (event) => {
       })
   );
 });
-
