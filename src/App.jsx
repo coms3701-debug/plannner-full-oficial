@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Home, CheckSquare, Activity, Briefcase, CalendarClock, Plus, Check, ChevronLeft, ChevronRight, 
   Trash2, Edit2, X, User, Settings, BellRing, AlertCircle, Clock, GripVertical,
-  Cloud, CloudOff, RefreshCw, LogOut, Mail, Lock, ShieldCheck, ListTodo, CheckCircle2
+  Cloud, CloudOff, RefreshCw, LogOut, Mail, Lock, ShieldCheck, ListTodo, CheckCircle2,
+  Eye, EyeOff // <-- NOVOS ÍCONES IMPORTADOS AQUI
 } from 'lucide-react';
 
 // --- IMPORTS DO FIREBASE ---
@@ -263,7 +264,6 @@ const AuthScreen = ({ auth }) => {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // Apenas verifica redirects, mas nós focamos-nos no Popup agora
     getRedirectResult(auth)
       .then((result) => {
         if (result) {
@@ -314,10 +314,7 @@ const AuthScreen = ({ auth }) => {
     hapticFeedback(30);
     try {
       const provider = new GoogleAuthProvider();
-      // OBRIGA O GOOGLE A MOSTRAR A TELA DE ESCOLHA DE CONTA
       provider.setCustomParameters({ prompt: 'select_account' });
-      
-      // O método de Popup resolve o problema do redirecionamento infinito nos telemóveis
       await signInWithPopup(auth, provider); 
     } catch (err) {
       console.error(err);
@@ -335,13 +332,11 @@ const AuthScreen = ({ auth }) => {
 
   return (
     <div className="min-h-[100dvh] bg-slate-900 flex flex-col justify-center items-center p-6 font-sans overflow-hidden relative">
-      {/* Efeitos de Fundo (Premium) */}
       <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-600/20 rounded-full blur-[100px] pointer-events-none"></div>
       <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-emerald-600/10 rounded-full blur-[100px] pointer-events-none"></div>
 
       <div className="w-full max-w-md animate-in fade-in slide-in-from-bottom-4 duration-700 relative z-10">
         
-        {/* LOGO E TEXTO BONITO */}
         <div className="flex flex-col items-center mb-8">
           <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-blue-700 rounded-[1.5rem] flex items-center justify-center shadow-[0_10px_30px_rgba(59,130,246,0.4)] mb-5 transform rotate-3 transition-transform hover:rotate-0 duration-300">
             <span className="text-white text-4xl font-black">P</span>
@@ -354,7 +349,6 @@ const AuthScreen = ({ auth }) => {
           </p>
         </div>
 
-        {/* FORMULÁRIO PREMIUM */}
         <form onSubmit={handleSubmit} className="bg-slate-800/60 backdrop-blur-xl p-6 sm:p-8 rounded-[2rem] border border-slate-700/50 shadow-2xl space-y-5">
           {error && (
             <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-4 rounded-2xl text-sm flex items-center gap-3 animate-in shake font-medium shadow-inner">
@@ -417,7 +411,6 @@ const AuthScreen = ({ auth }) => {
             </p>
           </div>
 
-          {/* DIVISÓRIA OU */}
           <div className="relative my-6">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-slate-700/80"></div>
@@ -427,7 +420,6 @@ const AuthScreen = ({ auth }) => {
             </div>
           </div>
 
-          {/* BOTÃO DO GOOGLE (Premium) */}
           <button 
             type="button" 
             onClick={handleGoogleLogin}
@@ -450,7 +442,7 @@ const AuthScreen = ({ auth }) => {
 
         <div className="mt-8 flex items-center justify-center gap-2 text-slate-500 opacity-60 text-[10px] uppercase font-bold tracking-widest">
           <ShieldCheck className="w-4 h-4" />
-          <span>Segurança Firebase (V3.0 Oficial)</span>
+          <span>Segurança Firebase (V4.0)</span>
         </div>
       </div>
     </div>
@@ -468,10 +460,13 @@ export default function App() {
 
   // --- CONFIGURAÇÃO DO GOOGLE FIREBASE ---
   const [firebaseUser, setFirebaseUser] = useState(null);
-  const [syncStatus, setSyncStatus] = useState('offline'); // 'offline', 'syncing', 'online'
+  const [syncStatus, setSyncStatus] = useState('offline');
   const dbRef = useRef(null);
   const authRef = useRef(null);
   const syncTimeoutRef = useRef(null);
+
+  // --- NOVO: ESTADO PARA OCULTAR SALDO (V4.0) ---
+  const [isBalanceVisible, setIsBalanceVisible] = useLocalStorage('planner_v4_balance_visible', true);
 
   useEffect(() => {
     // AS SUAS CHAVES OFICIAIS DO FIREBASE
@@ -498,14 +493,9 @@ export default function App() {
     const app = initializeApp(finalConfig);
     const auth = getAuth(app);
     
-    // VACINA CONTRA O BLOQUEIO DE SESSIONSTORAGE DO IOS/SAFARI
     setPersistence(auth, browserLocalPersistence)
-      .then(() => {
-         // Persistência configurada com sucesso
-      })
-      .catch((err) => {
-         console.warn("Aviso de persistência:", err);
-      });
+      .then(() => {})
+      .catch((err) => { console.warn("Aviso de persistência:", err); });
 
     authRef.current = auth;
     dbRef.current = getFirestore(app);
@@ -565,6 +555,7 @@ export default function App() {
     if (!dbRef.current || !user) return;
     setSyncStatus('syncing');
     try {
+      // IMPORTANTE: MANTIDO 'main_v3' PARA NÃO PERDER NENHUM DADO ANTERIOR
       const appId = typeof __app_id !== 'undefined' ? __app_id : 'planner-v3';
       const docPath = doc(dbRef.current, 'artifacts', appId, 'users', user.uid, 'plannerData', 'main_v3');
       const snapshot = await getDoc(docPath);
@@ -898,8 +889,26 @@ export default function App() {
       <div className="bg-slate-800 p-5 rounded-3xl border border-emerald-500/40 shadow-[0_15px_40px_-10px_rgba(16,185,129,0.25)] relative overflow-hidden">
         <div className="absolute top-0 right-0 -mr-6 -mt-6 w-32 h-32 bg-emerald-500/20 rounded-full blur-2xl pointer-events-none"></div>
         <div className="relative z-10 flex flex-col justify-center">
-          <p className="text-[11px] font-bold uppercase tracking-wider mb-1.5 text-emerald-400/90 flex items-center gap-1.5"><Briefcase className="w-3.5 h-3.5"/> Total Investido</p>
-          <p className="text-3xl sm:text-4xl font-bold font-mono tracking-tighter break-words text-white drop-shadow-md">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(currentPortfolioTotal)}</p>
+          
+          {/* TÍTULO E BOTÃO DE OCULTAR SALDO V4.0 */}
+          <div className="flex items-center justify-between mb-1.5">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-400/90 flex items-center gap-1.5">
+              <Briefcase className="w-3.5 h-3.5"/> Total Investido
+            </p>
+            <button 
+              onClick={() => { setIsBalanceVisible(!isBalanceVisible); hapticFeedback(10); }} 
+              className="p-1.5 text-emerald-400/80 hover:text-emerald-300 transition-colors rounded-full hover:bg-emerald-500/10 active:scale-90"
+            >
+              {isBalanceVisible ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+            </button>
+          </div>
+          
+          <p className="text-3xl sm:text-4xl font-bold font-mono tracking-tighter break-words text-white drop-shadow-md">
+            {isBalanceVisible 
+              ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(currentPortfolioTotal)
+              : 'R$ •••••'
+            }
+          </p>
         </div>
       </div>
 
@@ -1268,7 +1277,7 @@ export default function App() {
                 <button onClick={requestNotificationPermission} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-slate-300"><BellRing className="w-5 h-5 text-slate-400" /> <span className="font-medium">Ativar Notificações</span></button>
                 <button onClick={handleLogout} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-red-500/10 text-red-400 mt-4"><LogOut className="w-5 h-5 text-red-400" /> <span className="font-medium">Terminar Sessão</span></button>
               </div>
-              <div className="p-4 border-t border-slate-800"><p className="text-center text-[10px] text-slate-500 uppercase tracking-widest">Planner Full v3.0 Oficial</p></div>
+              <div className="p-4 border-t border-slate-800"><p className="text-center text-[10px] text-slate-500 uppercase tracking-widest">Planner Full v4.0 Oficial</p></div>
             </div>
           </div>
         )}
