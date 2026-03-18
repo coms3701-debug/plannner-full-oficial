@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Home, CheckSquare, Activity, Briefcase, CalendarClock, Plus, Check, ChevronLeft, ChevronRight, 
   Trash2, Edit2, X, User, Settings, BellRing, AlertCircle, Clock, GripVertical,
-  Cloud, CloudOff, RefreshCw, LogOut, Mail, Lock, ShieldCheck
+  Cloud, CloudOff, RefreshCw, LogOut, Mail, Lock, ShieldCheck, ListTodo
 } from 'lucide-react';
 
 // --- IMPORTS DO FIREBASE ---
@@ -14,8 +14,7 @@ import {
   createUserWithEmailAndPassword, 
   signOut,
   GoogleAuthProvider,
-  signInWithRedirect,
-  getRedirectResult
+  signInWithPopup
 } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc } from 'firebase/firestore';
 
@@ -231,7 +230,7 @@ class TabErrorBoundary extends React.Component {
     this.state = { hasError: false, errorMsg: '' };
   }
   static getDerivedStateFromError(error) { 
-    return { hasError: true, errorMsg: typeof error === 'object' ? error.toString() : String(error) }; 
+    return { hasError: true, errorMsg: typeof error === 'object' ? (error.message || 'Erro Desconhecido') : String(error) }; 
   }
   render() {
     if (this.state.hasError) {
@@ -251,29 +250,13 @@ class TabErrorBoundary extends React.Component {
   }
 }
 
-// --- TELA DE LOGIN / REGISTRO ---
+// --- TELA DE LOGIN / REGISTRO PREMIUM ---
 const AuthScreen = ({ auth }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    getRedirectResult(auth)
-      .then(() => {
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error(err);
-        if (err.code === 'auth/operation-not-allowed') {
-          setError('ERRO: O método de login não está ativado no Firebase. Ative Email/Senha e Google na aba Authentication.');
-        } else {
-          setError('Erro com o Google. Verifique se adicionou o seu link Vercel aos Domínios Autorizados no Firebase.');
-        }
-        setLoading(false);
-      });
-  }, [auth]);
+  const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -311,62 +294,78 @@ const AuthScreen = ({ auth }) => {
     hapticFeedback(30);
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithRedirect(auth, provider); 
+      // O método de Popup resolve o problema do redirecionamento infinito
+      await signInWithPopup(auth, provider); 
     } catch (err) {
       console.error(err);
-      setError('Erro ao iniciar o redirecionamento do Google.');
+      if (err.code === 'auth/popup-closed-by-user') {
+        setError('O login com Google foi cancelado.');
+      } else if (err.code === 'auth/popup-blocked') {
+        setError('Pop-up bloqueado. Use o botão de Email e Senha ou autorize pop-ups.');
+      } else {
+        setError('Erro com o Google. O Firebase suporta o domínio atual?');
+      }
+    } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 flex flex-col justify-center items-center p-6 selection:bg-blue-500/30 font-sans">
-      <div className="w-full max-w-md animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="min-h-[100dvh] bg-slate-900 flex flex-col justify-center items-center p-6 font-sans overflow-hidden relative">
+      {/* Efeitos de Fundo (Premium) */}
+      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-600/20 rounded-full blur-[100px] pointer-events-none"></div>
+      <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-emerald-600/10 rounded-full blur-[100px] pointer-events-none"></div>
+
+      <div className="w-full max-w-md animate-in fade-in slide-in-from-bottom-4 duration-700 relative z-10">
         
+        {/* LOGO E TEXTO BONITO */}
         <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-700 rounded-2xl flex items-center justify-center shadow-xl shadow-blue-500/20 mb-4 transform rotate-3">
-            <span className="text-white text-3xl font-black">P</span>
+          <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-blue-700 rounded-[1.5rem] flex items-center justify-center shadow-[0_10px_30px_rgba(59,130,246,0.4)] mb-5 transform rotate-3 transition-transform hover:rotate-0 duration-300">
+            <span className="text-white text-4xl font-black">P</span>
           </div>
-          <h1 className="text-3xl font-black tracking-tight text-white flex items-center gap-2">
+          <h1 className="text-4xl font-black tracking-tight text-white flex items-center gap-2 drop-shadow-md">
             Planner<span className="text-blue-500">Full</span>
           </h1>
-          <p className="text-slate-400 mt-2 text-sm text-center">Organize a sua vida, preserve os seus dados na nuvem.</p>
+          <p className="text-slate-400 mt-3 text-sm text-center font-medium max-w-[280px]">
+            Organize a sua vida e preserve os seus dados na nuvem oficial.
+          </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-slate-800 p-6 sm:p-8 rounded-3xl border border-slate-700 shadow-2xl space-y-5">
+        {/* FORMULÁRIO PREMIUM */}
+        <form onSubmit={handleSubmit} className="bg-slate-800/60 backdrop-blur-xl p-6 sm:p-8 rounded-[2rem] border border-slate-700/50 shadow-2xl space-y-5">
           {error && (
-            <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-3 rounded-xl text-sm flex items-center gap-2 animate-in shake">
+            <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-4 rounded-2xl text-sm flex items-center gap-3 animate-in shake font-medium shadow-inner">
               <AlertCircle className="w-5 h-5 shrink-0" />
-              <span>{error}</span>
+              <span className="leading-tight">{error}</span>
             </div>
           )}
 
           <div className="space-y-4">
             <div>
-              <label className="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wider pl-1">Email</label>
-              <div className="relative">
-                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+              <label className="block text-[11px] font-bold text-slate-400 mb-1.5 uppercase tracking-wider pl-1">Email</label>
+              <div className="relative group">
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 group-focus-within:text-blue-400 transition-colors" />
                 <input 
                   type="email" 
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl py-3.5 pl-11 pr-4 text-white focus:border-blue-500 outline-none transition-colors"
+                  className="w-full bg-slate-900/80 border border-slate-700 rounded-2xl py-4 pl-12 pr-4 text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all shadow-inner"
                   placeholder="seu@email.com"
                 />
               </div>
             </div>
             
             <div>
-              <label className="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wider pl-1">Senha</label>
-              <div className="relative">
-                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+              <label className="block text-[11px] font-bold text-slate-400 mb-1.5 uppercase tracking-wider pl-1">Senha</label>
+              <div className="relative group">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 group-focus-within:text-blue-400 transition-colors" />
                 <input 
                   type="password" 
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl py-3.5 pl-11 pr-4 text-white focus:border-blue-500 outline-none transition-colors"
+                  className="w-full bg-slate-900/80 border border-slate-700 rounded-2xl py-4 pl-12 pr-4 text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all shadow-inner"
                   placeholder="••••••••"
                 />
               </div>
@@ -376,18 +375,18 @@ const AuthScreen = ({ auth }) => {
           <button 
             type="submit" 
             disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 text-white py-4 rounded-xl font-bold shadow-lg shadow-blue-500/30 transition-all active:scale-[0.98] mt-2 flex justify-center items-center gap-2"
+            className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 disabled:opacity-50 text-white py-4 rounded-2xl font-bold shadow-[0_10px_20px_rgba(59,130,246,0.3)] transition-all active:scale-[0.98] mt-4 flex justify-center items-center gap-2 text-base"
           >
-            {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : (isLogin ? 'Entrar com Email' : 'Registar Conta')}
+            {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : (isLogin ? 'Entrar no Planner' : 'Criar Conta')}
           </button>
 
-          <div className="pt-4 mt-2 text-center">
-            <p className="text-sm text-slate-400">
+          <div className="pt-2 text-center">
+            <p className="text-sm text-slate-400 font-medium">
               {isLogin ? "Ainda não tem conta? " : "Já tem uma conta? "}
               <button 
                 type="button" 
                 onClick={() => { setIsLogin(!isLogin); setError(''); }}
-                className="text-blue-400 font-bold hover:underline"
+                className="text-blue-400 font-bold hover:text-blue-300 transition-colors"
                 disabled={loading}
               >
                 {isLogin ? 'Registe-se aqui' : 'Faça Login'}
@@ -395,20 +394,22 @@ const AuthScreen = ({ auth }) => {
             </p>
           </div>
 
+          {/* DIVISÓRIA OU */}
           <div className="relative my-6">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-slate-700"></div>
+              <div className="w-full border-t border-slate-700/80"></div>
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="px-3 bg-slate-800 text-slate-400 font-medium">Ou</span>
+              <span className="px-4 bg-slate-800 text-slate-500 font-bold uppercase tracking-widest text-[10px] rounded-full">Ou</span>
             </div>
           </div>
 
+          {/* BOTÃO DO GOOGLE (Premium) */}
           <button 
             type="button" 
             onClick={handleGoogleLogin}
             disabled={loading}
-            className="w-full bg-white hover:bg-gray-100 disabled:bg-gray-300 text-slate-900 py-3.5 rounded-xl font-bold shadow-md transition-all active:scale-[0.98] flex justify-center items-center gap-3"
+            className="w-full bg-white hover:bg-slate-100 disabled:bg-slate-300 text-slate-800 py-3.5 rounded-2xl font-bold shadow-md transition-all active:scale-[0.98] flex justify-center items-center gap-3 text-[15px]"
           >
             {loading ? <RefreshCw className="w-5 h-5 animate-spin text-blue-500" /> : (
               <>
@@ -426,7 +427,7 @@ const AuthScreen = ({ auth }) => {
 
         <div className="mt-8 flex items-center justify-center gap-2 text-slate-500 opacity-60 text-[10px] uppercase font-bold tracking-widest">
           <ShieldCheck className="w-4 h-4" />
-          <span>Segurança Firebase V3.0</span>
+          <span>Segurança Firebase (V3.0 Oficial)</span>
         </div>
       </div>
     </div>
@@ -450,7 +451,7 @@ export default function App() {
   const syncTimeoutRef = useRef(null);
 
   useEffect(() => {
-    // ⚠️ CHAVES DO FIREBASE RECUPERADAS COM SUCESSO:
+    // AS SUAS CHAVES OFICIAIS DO FIREBASE
     const vercelFirebaseConfig = {
       apiKey: "AIzaSyBIEMS3WhSNKmHsd4XTp-B3gA7vfRDyMwU",
       authDomain: "planner-full.firebaseapp.com",
@@ -526,13 +527,13 @@ export default function App() {
   const [editPrompt, setEditPrompt] = useState(null); 
   const [activeDailyDrag, setActiveDailyDrag] = useState(null);
 
-  // --- LÓGICA DE SINCRONIZAÇÃO COM A NUVEM ---
+  // --- INTEGRAÇÃO COM FIRESTORE (BANCO DE DADOS) ---
   const loadDataFromCloud = async (user) => {
     if (!dbRef.current || !user) return;
     setSyncStatus('syncing');
     try {
-      const appId = typeof __app_id !== 'undefined' ? __app_id : 'planner-v3';
-      const docPath = doc(dbRef.current, 'artifacts', appId, 'users', user.uid, 'plannerData', 'main_v3');
+      // Caminho fixo para garantir que os dados NUNCA se perdem
+      const docPath = doc(dbRef.current, 'artifacts', 'planner-v3', 'users', user.uid, 'plannerData', 'main_v3');
       const snapshot = await getDoc(docPath);
       
       if (snapshot.exists()) {
@@ -556,11 +557,12 @@ export default function App() {
 
   useEffect(() => {
     if (!firebaseUser || !dbRef.current) return;
+
     const saveDataToCloud = async () => {
       setSyncStatus('syncing');
       try {
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'planner-v3';
-        const docPath = doc(dbRef.current, 'artifacts', appId, 'users', firebaseUser.uid, 'plannerData', 'main_v3');
+        // Caminho fixo para garantir que os dados NUNCA se perdem
+        const docPath = doc(dbRef.current, 'artifacts', 'planner-v3', 'users', firebaseUser.uid, 'plannerData', 'main_v3');
         await setDoc(docPath, {
           tasks, taskCategories, habitsList, habits, dailyTasks, 
           portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance,
@@ -750,6 +752,43 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const cancelEditTask = () => {
+    setNewTask({ title: '', category: taskCategories[0]?.id || 'meta', dueDate: '', recurrence: 'none' });
+    setEditingTaskId(null);
+    setShowAddTask(false);
+    setIsEditingCategories(false);
+  };
+
+  const handleAddCategory = () => {
+    if (!newCategoryLabel.trim()) return;
+    const newId = newCategoryLabel.trim().toLowerCase().replace(/\s+/g, '_');
+    if (!taskCategories.some(c => c.id === newId)) {
+      setTaskCategories([...taskCategories, { id: newId, label: newCategoryLabel.trim() }]);
+    }
+    setNewCategoryLabel('');
+  };
+
+  const handleAddHabit = (e) => {
+    e.preventDefault();
+    if (!newHabitLabel.trim()) return;
+    setHabitsList([...habitsList, { id: `habit_${Date.now()}`, label: newHabitLabel.trim() }]);
+    setNewHabitLabel('');
+    setShowAddHabit(false);
+  };
+
+  const toggleHabit = (dateStr, habitId) => {
+    setHabits(prev => {
+      const safePrev = prev || {};
+      return {
+        ...safePrev,
+        [dateStr]: {
+          ...(safePrev[dateStr] || {}),
+          [habitId]: !(safePrev[dateStr]?.[habitId])
+        }
+      };
+    });
+  };
+
   const handleAddDailyTask = (e) => {
     e.preventDefault();
     if (!newDailyTask.trim()) return;
@@ -811,7 +850,7 @@ export default function App() {
   // --- ECRÃS DE VISUALIZAÇÃO ---
   const renderDashboard = () => (
     <div className="animate-in fade-in pb-20 relative space-y-8">
-      <div className="bg-slate-800 p-5 rounded-2xl border border-emerald-500/40 shadow-[0_15px_40px_-10px_rgba(16,185,129,0.25)] relative overflow-hidden">
+      <div className="bg-slate-800 p-5 rounded-3xl border border-emerald-500/40 shadow-[0_15px_40px_-10px_rgba(16,185,129,0.25)] relative overflow-hidden">
         <div className="absolute top-0 right-0 -mr-6 -mt-6 w-32 h-32 bg-emerald-500/20 rounded-full blur-2xl pointer-events-none"></div>
         <div className="relative z-10 flex flex-col justify-center">
           <p className="text-[11px] font-bold uppercase tracking-wider mb-1.5 text-emerald-400/90 flex items-center gap-1.5"><Briefcase className="w-3.5 h-3.5"/> Total Investido</p>
@@ -893,25 +932,25 @@ export default function App() {
       </div>
 
       {showAddTask && (
-        <form onSubmit={handleSaveTask} className="bg-slate-800 p-5 rounded-2xl border border-slate-700 mb-6 space-y-5 shadow-lg">
+        <form onSubmit={handleSaveTask} className="bg-slate-800 p-5 rounded-3xl border border-slate-700 mb-6 space-y-5 shadow-lg">
           <div>
             <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Título da Tarefa</label>
-            <input type="text" required className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none" value={newTask.title} onChange={e => setNewTask({...newTask, title: e.target.value})} placeholder="Ex: Reunião" />
+            <input type="text" required className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-blue-500" value={newTask.title} onChange={e => setNewTask({...newTask, title: e.target.value})} placeholder="Ex: Reunião" />
           </div>
           <div className="flex gap-4">
             <div className="flex-1 min-w-0">
               <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Data</label>
-              <input type="date" required className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none" value={newTask.dueDate} onChange={e => setNewTask({...newTask, dueDate: e.target.value})} />
+              <input type="date" required className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none color-scheme-dark focus:border-blue-500" value={newTask.dueDate} onChange={e => setNewTask({...newTask, dueDate: e.target.value})} />
             </div>
             <div className="flex-1 min-w-0">
               <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Hora (Op)</label>
-              <input type="time" className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none" value={newTask.dueTime} onChange={e => setNewTask({...newTask, dueTime: e.target.value})} />
+              <input type="time" className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none color-scheme-dark focus:border-blue-500" value={newTask.dueTime} onChange={e => setNewTask({...newTask, dueTime: e.target.value})} />
             </div>
           </div>
           <div className="flex gap-4">
              <div className="flex-1 min-w-0">
               <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Recorrência</label>
-              <select className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none" value={newTask.recurrence} onChange={e => setNewTask({...newTask, recurrence: e.target.value})}>
+              <select className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-blue-500" value={newTask.recurrence} onChange={e => setNewTask({...newTask, recurrence: e.target.value})}>
                 <option value="none">Nenhuma</option><option value="daily">Diária</option><option value="weekly">Semanal</option><option value="monthly">Mensal</option>
               </select>
              </div>
@@ -924,7 +963,7 @@ export default function App() {
             {isEditingCategories ? (
               <div className="bg-slate-900 border border-slate-700 rounded-xl p-3 space-y-2">
                 <SwipeHint />
-                <div className="max-h-36 overflow-y-auto space-y-2">
+                <div className="max-h-36 overflow-y-auto space-y-2 pr-2">
                   {taskCategories.map(cat => (
                     <SwipeableItem key={cat.id} wrapperClass="mb-0" frontClass="p-2.5 bg-slate-800 border-slate-700 flex justify-between" onEdit={() => setEditPrompt({ type: 'category', id: cat.id, label: cat.label })} onDeleteRequest={() => setDeletePrompt({ type: 'category', id: cat.id, title: cat.label })}>
                       <span className="text-slate-200 truncate pr-2 font-medium w-full">{cat.label}</span>
@@ -939,7 +978,7 @@ export default function App() {
             ) : (
               <div className="flex gap-3 overflow-x-auto pb-2 hide-scrollbar">
                 {taskCategories.map(cat => (
-                  <button key={cat.id} type="button" onClick={() => setNewTask({...newTask, category: cat.id})} className={`shrink-0 px-5 py-2.5 rounded-full text-sm font-bold border-2 ${newTask.category === cat.id ? 'bg-blue-600 border-blue-400 text-white' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>{cat.label}</button>
+                  <button key={cat.id} type="button" onClick={() => setNewTask({...newTask, category: cat.id})} className={`shrink-0 px-5 py-2.5 rounded-full text-sm font-bold border-2 transition-all active:scale-95 ${newTask.category === cat.id ? 'bg-blue-600 border-blue-400 text-white shadow-[0_0_10px_rgba(59,130,246,0.3)]' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>{cat.label}</button>
                 ))}
               </div>
             )}
@@ -953,7 +992,7 @@ export default function App() {
 
       <div className="space-y-1">
         {tasks.length > 0 && !showAddTask && <SwipeHint />}
-        {sortedTasksGlobally.map(task => {
+        {dashboardAgendaTasks.map(task => {
           const status = getTaskStatus(task.dueDate, task.completed);
           const classStr = getStatusColors(status);
           const categoryObj = taskCategories.find(c => c.id === task.category);
@@ -1101,7 +1140,7 @@ export default function App() {
         </div>
       )}
 
-      <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700 mt-8 relative overflow-hidden">
+      <div className="bg-slate-800 p-5 rounded-3xl border border-slate-700 mt-8 relative overflow-hidden">
         <h3 className="text-lg font-bold text-white mb-5 flex items-center gap-2"><Activity className="w-5 h-5 text-blue-400"/> Evolução</h3>
         <div className="grid grid-cols-2 gap-3 mb-4 relative z-10">
           <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-700/50">
@@ -1131,7 +1170,7 @@ export default function App() {
         
         <div className="shrink-0 pt-6 pb-2 px-6 flex justify-between items-center bg-slate-900/90 backdrop-blur-md z-10 border-b border-slate-800">
           <div className="font-black text-xl text-white flex items-center gap-2">
-            <div className="w-7 h-7 bg-gradient-to-br from-blue-500 to-blue-700 rounded-md flex items-center justify-center shadow-lg"><span className="text-white text-sm">P</span></div>
+            <div className="w-7 h-7 bg-gradient-to-br from-blue-500 to-blue-700 rounded-[8px] flex items-center justify-center shadow-lg"><span className="text-white text-sm">P</span></div>
             Planner<span className="text-blue-500">Full</span>
           </div>
           <button onClick={() => setIsSidebarOpen(true)} className="w-9 h-9 rounded-full bg-slate-800 border-2 border-slate-600 flex items-center justify-center relative active:scale-95">
@@ -1152,13 +1191,16 @@ export default function App() {
         <nav className="shrink-0 bg-slate-900 border-t border-slate-800 pb-safe pt-2 px-6 flex justify-between items-center w-full z-20">
           {[
             { id: 'dashboard', icon: Home, label: 'Início' }, { id: 'tasks', icon: CheckSquare, label: 'Agenda' },
-            { id: 'routine', icon: Activity, label: 'Foco' }, { id: 'portfolio', icon: Briefcase, label: 'Ativos' }
-          ].map(tab => (
-            <button key={tab.id} onClick={() => { setActiveTab(tab.id); hapticFeedback(20); }} className={`flex flex-col items-center p-2 rounded-xl min-w-[64px] transition-all active:scale-90 ${activeTab === tab.id ? 'text-blue-500' : 'text-slate-500'}`}>
-              <div className={`relative p-1.5 rounded-lg ${activeTab === tab.id ? 'bg-blue-500/10' : ''}`}><tab.icon className="w-6 h-6" strokeWidth={activeTab === tab.id ? 2.5 : 2} /></div>
-              <span className={`text-[10px] font-semibold mt-1 ${activeTab === tab.id ? 'opacity-100' : 'opacity-0 h-0'}`}>{tab.label}</span>
-            </button>
-          ))}
+            { id: 'routine', icon: ListTodo, label: 'Foco' }, { id: 'portfolio', icon: Briefcase, label: 'Ativos' }
+          ].map(tab => {
+            const IconComponent = tab.icon;
+            return (
+              <button key={tab.id} onClick={() => { setActiveTab(tab.id); hapticFeedback(20); }} className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-all active:scale-90 ${activeTab === tab.id ? 'text-blue-500' : 'text-slate-500'}`}>
+                <IconComponent className="w-6 h-6" strokeWidth={activeTab === tab.id ? 2.5 : 2} />
+                <span className={`text-[9px] font-bold uppercase ${activeTab === tab.id ? 'opacity-100' : 'opacity-0 h-0'}`}>{tab.label}</span>
+              </button>
+            );
+          })}
         </nav>
 
         {isSidebarOpen && (
@@ -1181,14 +1223,14 @@ export default function App() {
                 <button onClick={requestNotificationPermission} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-slate-300"><BellRing className="w-5 h-5 text-slate-400" /> <span className="font-medium">Ativar Notificações</span></button>
                 <button onClick={handleLogout} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-red-500/10 text-red-400 mt-4"><LogOut className="w-5 h-5 text-red-400" /> <span className="font-medium">Terminar Sessão</span></button>
               </div>
-              <div className="p-4 border-t border-slate-800"><p className="text-center text-[10px] text-slate-500 uppercase tracking-widest">Planner Full v3.0 Estável</p></div>
+              <div className="p-4 border-t border-slate-800"><p className="text-center text-[10px] text-slate-500 uppercase tracking-widest">Planner Full v3.0 Oficial</p></div>
             </div>
           </div>
         )}
 
         {deletePrompt && (
           <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
-            <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-[320px] border border-slate-700 shadow-2xl">
+            <div className="bg-slate-800 rounded-3xl p-6 w-full max-w-[320px] border border-slate-700 shadow-2xl">
               <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center mb-4 mx-auto"><Trash2 className="w-6 h-6 text-red-400" /></div>
               <h3 className="text-xl font-bold text-white text-center mb-2">Atenção</h3>
               <p className="text-slate-400 text-center text-sm mb-6">Apagar {deletePrompt.type === 'task' ? 'a tarefa' : deletePrompt.type === 'habit' ? 'o hábito' : 'o item'} "{deletePrompt.title}"?</p>
@@ -1202,7 +1244,7 @@ export default function App() {
 
         {editPrompt && (
           <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
-            <form onSubmit={handleSaveSimpleEdit} className="bg-slate-800 rounded-2xl p-6 w-full max-w-[320px] border border-slate-700 shadow-2xl">
+            <form onSubmit={handleSaveSimpleEdit} className="bg-slate-800 rounded-3xl p-6 w-full max-w-[320px] border border-slate-700 shadow-2xl">
               <h3 className="text-xl font-bold text-white mb-4">Editar</h3>
               <div className="space-y-4 mb-6">
                 <input type="text" required autoFocus className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none" value={editPrompt.label} onChange={e => setEditPrompt({...editPrompt, label: e.target.value})} />
