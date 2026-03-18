@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Home, CheckSquare, Activity, Briefcase, CalendarClock, Plus, Check, ChevronLeft, ChevronRight, 
   Trash2, Edit2, X, User, Settings, BellRing, AlertCircle, Clock, GripVertical,
-  Cloud, CloudOff, RefreshCw, LogOut, Mail, Lock, ShieldCheck, ListTodo
+  Cloud, CloudOff, RefreshCw, LogOut, Mail, Lock, ShieldCheck, ListTodo, CheckCircle2
 } from 'lucide-react';
 
 // --- IMPORTS DO FIREBASE ---
@@ -17,7 +17,8 @@ import {
   signInWithRedirect,
   getRedirectResult,
   setPersistence,
-  browserLocalPersistence
+  browserLocalPersistence,
+  signInWithPopup
 } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc } from 'firebase/firestore';
 
@@ -259,24 +260,20 @@ const AuthScreen = ({ auth }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true); // Começa a carregar para capturar o retorno do Google
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // Tenta capturar o utilizador que volta do redirecionamento do Google
+    // Apenas verifica redirects, mas nós focamos-nos no Popup agora
     getRedirectResult(auth)
       .then((result) => {
-        setLoading(false);
         if (result) {
            console.log("Login com Google bem-sucedido via redirect");
         }
       })
       .catch((err) => {
         console.error(err);
-        setLoading(false);
         if (err.code === 'auth/operation-not-allowed') {
           setError('ERRO: O método de login não está ativado no Firebase.');
-        } else {
-          setError('O Safari/iOS bloqueou o Google. Por favor, utilize Email e Senha abaixo.');
         }
       });
   }, [auth]);
@@ -317,11 +314,21 @@ const AuthScreen = ({ auth }) => {
     hapticFeedback(30);
     try {
       const provider = new GoogleAuthProvider();
-      // O método Redirect com a persistência de LocalStorage evita o erro do SessionStorage no iOS
-      await signInWithRedirect(auth, provider); 
+      // OBRIGA O GOOGLE A MOSTRAR A TELA DE ESCOLHA DE CONTA
+      provider.setCustomParameters({ prompt: 'select_account' });
+      
+      // O método de Popup resolve o problema do redirecionamento infinito nos telemóveis
+      await signInWithPopup(auth, provider); 
     } catch (err) {
       console.error(err);
-      setError('Erro ao iniciar. O Safari pode estar a bloquear.');
+      if (err.code === 'auth/popup-closed-by-user') {
+        setError('O login com Google foi cancelado.');
+      } else if (err.code === 'auth/popup-blocked') {
+        setError('Pop-up bloqueado. O seu telemóvel não permite janelas flutuantes. Por favor, use Email e Senha.');
+      } else {
+        setError('Erro com o Google. O Firebase suporta o domínio atual?');
+      }
+    } finally {
       setLoading(false);
     }
   };
@@ -690,6 +697,18 @@ export default function App() {
       return dateA - dateB;
     });
   }, [tasks, todayObj]);
+
+  const sortedTasksGlobally = useMemo(() => {
+    return [...tasks].sort((a, b) => {
+      if (a.completed !== b.completed) return a.completed ? 1 : -1;
+      const dateA = parseLocalDate(a.dueDate).getTime();
+      const dateB = parseLocalDate(b.dueDate).getTime();
+      if (isNaN(dateA) && isNaN(dateB)) return 0;
+      if (isNaN(dateA)) return 1;
+      if (isNaN(dateB)) return -1;
+      return dateA - dateB;
+    });
+  }, [tasks]);
 
   const dayTasksForDashboard = Array.isArray(safeDailyTasks[todayStr]) ? safeDailyTasks[todayStr] : [];
   const hasUrgentTasks = dayTasksForDashboard.some(t => t && !t.completed) || dashboardAgendaTasks.some(t => t && !t.completed && (getTaskStatus(t.dueDate, false) === 'today' || getTaskStatus(t.dueDate, false) === 'overdue'));
