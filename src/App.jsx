@@ -442,7 +442,7 @@ const AuthScreen = ({ auth }) => {
 
         <div className="mt-8 flex items-center justify-center gap-2 text-slate-500 opacity-60 text-[10px] uppercase font-bold tracking-widest">
           <ShieldCheck className="w-4 h-4" />
-          <span>Segurança Firebase (V4.0 Oficial)</span>
+          <span>Segurança Firebase (V4.1 Oficial)</span>
         </div>
       </div>
     </div>
@@ -460,9 +460,9 @@ export default function App() {
 
   // --- CONFIGURAÇÃO DO GOOGLE FIREBASE ---
   const [firebaseUser, setFirebaseUser] = useState(null);
-  const [syncStatus, setSyncStatus] = useState('offline'); // 'offline', 'syncing', 'online'
+  const [syncStatus, setSyncStatus] = useState('offline');
   
-  // --- NOVO: BLOQUEIO DE SINCRONIZAÇÃO (EVITA APAGAR DADOS) ---
+  // --- BLOQUEIO DE SINCRONIZAÇÃO (EVITA APAGAR DADOS) ---
   const [isDataLoaded, setIsDataLoaded] = useState(false); 
 
   const dbRef = useRef(null);
@@ -473,7 +473,6 @@ export default function App() {
   const [isBalanceVisible, setIsBalanceVisible] = useLocalStorage('planner_v4_balance_visible', true);
 
   useEffect(() => {
-    // AS SUAS CHAVES OFICIAIS DO FIREBASE
     const vercelFirebaseConfig = {
       apiKey: "AIzaSyBIEMS3WhSNKmHsd4XTp-B3gA7vfRDyMwU",
       authDomain: "planner-full.firebaseapp.com",
@@ -516,7 +515,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // --- ESTADOS DO APLICATIVO ---
+  // --- ESTADOS DO APLICATIVO (CHAVES MANTIDAS PARA GARANTIR DADOS) ---
   const [tasksRaw, setTasks] = useLocalStorage('planner_v3_tasks', []);
   const [taskCategoriesRaw, setTaskCategories] = useLocalStorage('planner_v3_categories', INITIAL_CATEGORIES);
   const [habitsListRaw, setHabitsList] = useLocalStorage('planner_v3_habitsList', INITIAL_HABITS_LIST);
@@ -559,6 +558,7 @@ export default function App() {
     if (!dbRef.current || !user) return;
     setSyncStatus('syncing');
     try {
+      // IMPORTANTE: MANTIDO 'main_v3' PARA NÃO PERDER NENHUM DADO ANTERIOR
       const appId = typeof __app_id !== 'undefined' ? __app_id : 'planner-v3';
       const docPath = doc(dbRef.current, 'artifacts', appId, 'users', user.uid, 'plannerData', 'main_v3');
       const snapshot = await getDoc(docPath);
@@ -580,13 +580,11 @@ export default function App() {
       console.error("Erro ao carregar da nuvem:", error);
       setSyncStatus('offline');
     } finally {
-      // IMPORTANTE: Avisa o sistema que a leitura da nuvem já terminou
       setIsDataLoaded(true);
     }
   };
 
   useEffect(() => {
-    // SÓ GRAVA DEPOIS DE TER LIDO DA NUVEM (!isDataLoaded protege contra apagar dados)
     if (!firebaseUser || !dbRef.current || !isDataLoaded) return;
 
     const saveDataToCloud = async () => {
@@ -611,7 +609,6 @@ export default function App() {
     return () => clearTimeout(syncTimeoutRef.current);
   }, [tasks, taskCategories, habitsList, habits, dailyTasks, portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance, firebaseUser, isDataLoaded]);
 
-  // --- LOGOUT ---
   const handleLogout = async () => {
     if (authRef.current) {
       await signOut(authRef.current);
@@ -620,7 +617,7 @@ export default function App() {
       setHabits({});
       setDailyTasks({});
       setPortfolio({});
-      setIsDataLoaded(false); // Reseta a fechadura para o próximo login
+      setIsDataLoaded(false); 
     }
   };
 
@@ -735,9 +732,11 @@ export default function App() {
     setDeletePrompt(null);
   };
 
+  // --- ATUALIZADO: SALVAR EDIÇÕES COM MIGRAÇÃO DE DATA ---
   const handleSaveSimpleEdit = (e) => {
     e.preventDefault();
     if (!editPrompt || !editPrompt.label.trim()) return;
+    
     if (editPrompt.type === 'habit') {
       setHabitsList(habitsList.map(h => h.id === editPrompt.id ? { ...h, label: editPrompt.label } : h));
     } else if (editPrompt.type === 'category') {
@@ -745,10 +744,34 @@ export default function App() {
     } else if (editPrompt.type === 'portfolioCat') {
       setPortfolioCategories(portfolioCategories.map(c => c.id === editPrompt.id ? { ...c, label: editPrompt.label } : c));
     } else if (editPrompt.type === 'dailyTask') {
+      
       setDailyTasks(prev => {
-        const dStr = editPrompt.dateStr;
-        const dayList = prev[dStr] || [];
-        return { ...prev, [dStr]: dayList.map(t => t.id === editPrompt.id ? { ...t, text: editPrompt.label, time: editPrompt.time } : t) };
+        const oldStr = editPrompt.originalDateStr;
+        const newStr = editPrompt.dateStr;
+        const newState = { ...prev };
+        
+        // Procurar tarefa no dia original
+        const oldList = [...(newState[oldStr] || [])];
+        const taskIndex = oldList.findIndex(t => t.id === editPrompt.id);
+
+        if (taskIndex > -1) {
+          const taskToMove = { ...oldList[taskIndex], text: editPrompt.label, time: editPrompt.time };
+
+          if (oldStr === newStr) {
+            // Se a data é a mesma, só atualiza o texto/hora no mesmo dia
+            oldList[taskIndex] = taskToMove;
+            newState[oldStr] = oldList;
+          } else {
+            // Se a data mudou, remove do dia velho e insere no dia novo!
+            oldList.splice(taskIndex, 1);
+            newState[oldStr] = oldList;
+            
+            const newList = [...(newState[newStr] || [])];
+            newList.push(taskToMove);
+            newState[newStr] = newList;
+          }
+        }
+        return newState;
       });
     }
     setEditPrompt(null);
@@ -898,7 +921,6 @@ export default function App() {
         <div className="absolute top-0 right-0 -mr-6 -mt-6 w-32 h-32 bg-emerald-500/20 rounded-full blur-2xl pointer-events-none"></div>
         <div className="relative z-10 flex flex-col justify-center">
           
-          {/* TÍTULO E BOTÃO DE OCULTAR SALDO V4.0 */}
           <div className="flex items-center justify-between mb-1.5">
             <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-400/90 flex items-center gap-1.5">
               <Briefcase className="w-3.5 h-3.5"/> Total Investido
@@ -932,7 +954,7 @@ export default function App() {
               return (
                 <div key={task.id} data-daily-drag-id={task.id} className={dragClasses}>
                   <SwipeableItem 
-                    onEdit={() => setEditPrompt({ type: 'dailyTask', id: task.id, label: task.text, dateStr: todayStr, time: task.time || '' })} 
+                    onEdit={() => setEditPrompt({ type: 'dailyTask', id: task.id, label: task.text, originalDateStr: todayStr, dateStr: todayStr, time: task.time || '' })} 
                     onDeleteRequest={() => setDeletePrompt({ type: 'dailyTask', id: task.id, title: task.text, dateStr: todayStr })} 
                     frontClass="bg-slate-800/80 border-slate-700/80 p-3.5 flex items-center justify-between" wrapperClass="mb-0"
                   >
@@ -1111,7 +1133,11 @@ export default function App() {
           <div className="space-y-2 mt-3">
             {dayTasks.map(task => (
               <div key={task.id} data-daily-drag-id={task.id} className={activeDailyDrag === task.id ? 'scale-[1.02] shadow-2xl ring-1 ring-blue-500 z-50 rounded-xl' : 'transition-all duration-200'}>
-                <SwipeableItem onEdit={() => setEditPrompt({ type: 'dailyTask', id: task.id, label: task.text, dateStr: dateStr, time: task.time || '' })} onDeleteRequest={() => setDeletePrompt({ type: 'dailyTask', id: task.id, title: task.text, dateStr: dateStr })} frontClass="bg-slate-800/80 border-slate-700/80 p-3.5 flex items-center justify-between" wrapperClass="mb-0">
+                <SwipeableItem 
+                  onEdit={() => setEditPrompt({ type: 'dailyTask', id: task.id, label: task.text, originalDateStr: dateStr, dateStr: dateStr, time: task.time || '' })} 
+                  onDeleteRequest={() => setDeletePrompt({ type: 'dailyTask', id: task.id, title: task.text, dateStr: dateStr })} 
+                  frontClass="bg-slate-800/80 border-slate-700/80 p-3.5 flex items-center justify-between" wrapperClass="mb-0"
+                >
                   <label className="flex items-center gap-3 cursor-pointer flex-1 w-full min-w-0 pr-2">
                     <div className="relative flex items-center justify-center w-6 h-6 shrink-0">
                       <input type="checkbox" checked={!!task.completed} onChange={() => toggleDailyTask(dateStr, task.id)} className="peer sr-only"/>
@@ -1285,7 +1311,7 @@ export default function App() {
                 <button onClick={requestNotificationPermission} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-slate-300"><BellRing className="w-5 h-5 text-slate-400" /> <span className="font-medium">Ativar Notificações</span></button>
                 <button onClick={handleLogout} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-red-500/10 text-red-400 mt-4"><LogOut className="w-5 h-5 text-red-400" /> <span className="font-medium">Terminar Sessão</span></button>
               </div>
-              <div className="p-4 border-t border-slate-800"><p className="text-center text-[10px] text-slate-500 uppercase tracking-widest">Planner Full v4.0 Oficial</p></div>
+              <div className="p-4 border-t border-slate-800"><p className="text-center text-[10px] text-slate-500 uppercase tracking-widest">Planner Full v4.1 Oficial</p></div>
             </div>
           </div>
         )}
@@ -1309,10 +1335,20 @@ export default function App() {
             <form onSubmit={handleSaveSimpleEdit} className="bg-slate-800 rounded-3xl p-6 w-full max-w-[320px] border border-slate-700 shadow-2xl">
               <h3 className="text-xl font-bold text-white mb-4">Editar</h3>
               <div className="space-y-4 mb-6">
-                <input type="text" required autoFocus className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none" value={editPrompt.label} onChange={e => setEditPrompt({...editPrompt, label: e.target.value})} />
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Nome</label>
+                  <input type="text" required autoFocus className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none" value={editPrompt.label} onChange={e => setEditPrompt({...editPrompt, label: e.target.value})} />
+                </div>
                 {editPrompt.type === 'dailyTask' && (
                   <div className="flex gap-3">
-                    <input type="time" className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none color-scheme-dark" value={editPrompt.time || ''} onChange={e => setEditPrompt({...editPrompt, time: e.target.value})} />
+                    <div className="flex-1 min-w-0">
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Data</label>
+                      <input type="date" required className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none color-scheme-dark" value={editPrompt.dateStr} onChange={e => setEditPrompt({...editPrompt, dateStr: e.target.value})} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Hora</label>
+                      <input type="time" className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none color-scheme-dark" value={editPrompt.time || ''} onChange={e => setEditPrompt({...editPrompt, time: e.target.value})} />
+                    </div>
                   </div>
                 )}
               </div>
