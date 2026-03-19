@@ -3,7 +3,7 @@ import {
   Home, CheckSquare, Activity, Briefcase, CalendarClock, Plus, Check, ChevronLeft, ChevronRight, 
   Trash2, Edit2, X, User, Settings, BellRing, AlertCircle, Clock, GripVertical,
   Cloud, CloudOff, RefreshCw, LogOut, Mail, Lock, ShieldCheck, ListTodo, CheckCircle2,
-  Eye, EyeOff
+  Eye, EyeOff, FileText
 } from 'lucide-react';
 
 // --- IMPORTS DO FIREBASE ---
@@ -442,7 +442,7 @@ const AuthScreen = ({ auth }) => {
 
         <div className="mt-8 flex items-center justify-center gap-2 text-slate-500 opacity-60 text-[10px] uppercase font-bold tracking-widest">
           <ShieldCheck className="w-4 h-4" />
-          <span>Segurança Firebase (V4.1 Oficial)</span>
+          <span>Segurança Firebase (V4.3 Oficial)</span>
         </div>
       </div>
     </div>
@@ -469,8 +469,8 @@ export default function App() {
   const authRef = useRef(null);
   const syncTimeoutRef = useRef(null);
 
-  // --- ESTADO PARA OCULTAR SALDO (V4.0) ---
   const [isBalanceVisible, setIsBalanceVisible] = useLocalStorage('planner_v4_balance_visible', true);
+  const [stickyNote, setStickyNote] = useLocalStorage('planner_v4_sticky', '');
 
   useEffect(() => {
     const vercelFirebaseConfig = {
@@ -515,7 +515,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // --- ESTADOS DO APLICATIVO (CHAVES MANTIDAS PARA GARANTIR DADOS) ---
+  // --- ESTADOS DO APLICATIVO ---
   const [tasksRaw, setTasks] = useLocalStorage('planner_v3_tasks', []);
   const [taskCategoriesRaw, setTaskCategories] = useLocalStorage('planner_v3_categories', INITIAL_CATEGORIES);
   const [habitsListRaw, setHabitsList] = useLocalStorage('planner_v3_habitsList', INITIAL_HABITS_LIST);
@@ -540,7 +540,8 @@ export default function App() {
   const [newCategoryLabel, setNewCategoryLabel] = useState('');
   const [showAddTask, setShowAddTask] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState(null);
-  const [newTask, setNewTask] = useState({ title: '', category: 'meta', dueDate: '', dueTime: '', hasReminder: false, recurrence: 'none' });
+  // NOVO ESTADO: description
+  const [newTask, setNewTask] = useState({ title: '', category: 'meta', dueDate: '', dueTime: '', hasReminder: false, recurrence: 'none', description: '' });
   const [showAddHabit, setShowAddHabit] = useState(false);
   const [newHabitLabel, setNewHabitLabel] = useState('');
   const [newDailyTask, setNewDailyTask] = useState('');
@@ -558,7 +559,6 @@ export default function App() {
     if (!dbRef.current || !user) return;
     setSyncStatus('syncing');
     try {
-      // IMPORTANTE: MANTIDO 'main_v3' PARA NÃO PERDER NENHUM DADO ANTERIOR
       const appId = typeof __app_id !== 'undefined' ? __app_id : 'planner-v3';
       const docPath = doc(dbRef.current, 'artifacts', appId, 'users', user.uid, 'plannerData', 'main_v3');
       const snapshot = await getDoc(docPath);
@@ -574,6 +574,7 @@ export default function App() {
         if (data.portfolio) setPortfolio(data.portfolio);
         if (data.portfolioUpdateDate) setPortfolioUpdateDate(data.portfolioUpdateDate);
         if (data.prevPortfolioBalance) setPrevPortfolioBalance(data.prevPortfolioBalance);
+        if (data.stickyNote !== undefined) setStickyNote(data.stickyNote || '');
       }
       setSyncStatus('online');
     } catch (error) {
@@ -595,6 +596,7 @@ export default function App() {
         await setDoc(docPath, {
           tasks, taskCategories, habitsList, habits, dailyTasks, 
           portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance,
+          stickyNote, 
           lastUpdated: new Date().toISOString()
         }, { merge: true });
         setSyncStatus('online');
@@ -607,7 +609,7 @@ export default function App() {
     clearTimeout(syncTimeoutRef.current);
     syncTimeoutRef.current = setTimeout(() => { saveDataToCloud(); }, 2000);
     return () => clearTimeout(syncTimeoutRef.current);
-  }, [tasks, taskCategories, habitsList, habits, dailyTasks, portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance, firebaseUser, isDataLoaded]);
+  }, [tasks, taskCategories, habitsList, habits, dailyTasks, portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance, stickyNote, firebaseUser, isDataLoaded]);
 
   const handleLogout = async () => {
     if (authRef.current) {
@@ -617,6 +619,7 @@ export default function App() {
       setHabits({});
       setDailyTasks({});
       setPortfolio({});
+      setStickyNote('');
       setIsDataLoaded(false); 
     }
   };
@@ -732,7 +735,6 @@ export default function App() {
     setDeletePrompt(null);
   };
 
-  // --- ATUALIZADO: SALVAR EDIÇÕES COM MIGRAÇÃO DE DATA ---
   const handleSaveSimpleEdit = (e) => {
     e.preventDefault();
     if (!editPrompt || !editPrompt.label.trim()) return;
@@ -758,11 +760,9 @@ export default function App() {
           const taskToMove = { ...oldList[taskIndex], text: editPrompt.label, time: editPrompt.time };
 
           if (oldStr === newStr) {
-            // Se a data é a mesma, só atualiza o texto/hora no mesmo dia
             oldList[taskIndex] = taskToMove;
             newState[oldStr] = oldList;
           } else {
-            // Se a data mudou, remove do dia velho e insere no dia novo!
             oldList.splice(taskIndex, 1);
             newState[oldStr] = oldList;
             
@@ -807,20 +807,20 @@ export default function App() {
     } else {
       setTasks([...tasks, { ...newTask, id: Date.now(), completed: false }]);
     }
-    setNewTask({ title: '', category: taskCategories[0]?.id || 'meta', dueDate: '', dueTime: '', recurrence: 'none', hasReminder: false });
+    setNewTask({ title: '', category: taskCategories[0]?.id || 'meta', dueDate: '', dueTime: '', recurrence: 'none', hasReminder: false, description: '' });
     setShowAddTask(false);
     setEditingTaskId(null);
   };
 
   const startEditTask = (task) => {
-    setNewTask({ title: task.title, category: task.category, dueDate: task.dueDate, dueTime: task.dueTime || '', recurrence: task.recurrence || 'none', hasReminder: task.hasReminder || false });
+    setNewTask({ title: task.title, category: task.category, dueDate: task.dueDate, dueTime: task.dueTime || '', recurrence: task.recurrence || 'none', hasReminder: task.hasReminder || false, description: task.description || '' });
     setEditingTaskId(task.id);
     setShowAddTask(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const cancelEditTask = () => {
-    setNewTask({ title: '', category: taskCategories[0]?.id || 'meta', dueDate: '', recurrence: 'none' });
+    setNewTask({ title: '', category: taskCategories[0]?.id || 'meta', dueDate: '', recurrence: 'none', description: '' });
     setEditingTaskId(null);
     setShowAddTask(false);
     setIsEditingCategories(false);
@@ -942,6 +942,19 @@ export default function App() {
         </div>
       </div>
 
+      <div className="bg-slate-800/80 p-4 rounded-3xl border border-slate-700/50 shadow-sm relative overflow-hidden group">
+        <div className="absolute top-0 right-0 w-20 h-20 bg-blue-500/5 rounded-full -mr-10 -mt-10 blur-xl pointer-events-none transition-all group-focus-within:bg-blue-500/10"></div>
+        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+          <FileText className="w-4 h-4 text-blue-400" /> Bloco de Notas Rápido
+        </h3>
+        <textarea
+          value={stickyNote}
+          onChange={(e) => setStickyNote(e.target.value)}
+          placeholder="Anotações importantes..."
+          className="w-full bg-transparent text-sm text-slate-200 outline-none resize-none min-h-[80px] placeholder:text-slate-600 focus:placeholder:text-slate-500 transition-colors"
+        />
+      </div>
+
       <div>
         <h2 className="text-sm font-bold uppercase tracking-widest text-blue-400 mb-4 px-1 flex items-center gap-2"><AlertCircle className="w-4 h-4" /> Foco do Dia</h2>
         {dayTasksForDashboard.length === 0 ? (
@@ -993,6 +1006,8 @@ export default function App() {
                   <button onClick={() => toggleTask(task.id)} className={`w-6 h-6 rounded-md border flex items-center justify-center transition-all duration-300 shrink-0 active:scale-75 ${task.completed ? 'bg-blue-600 border-blue-600' : 'border-slate-500'}`}>{task.completed && <Check className="w-4 h-4 text-white" />}</button>
                   <div className="flex-1 min-w-0 pointer-events-none">
                     <h3 className={`font-medium text-sm truncate transition-colors ${task.completed ? 'line-through text-slate-500' : ''}`}>{task.title}</h3>
+                    {/* EXIBIÇÃO DE NOTAS DE FORMA COMPACTA NO DASHBOARD */}
+                    {task.description && <p className={`text-[10px] mt-0.5 line-clamp-1 ${task.completed ? 'text-slate-600' : 'text-slate-400'}`}>{task.description}</p>}
                     <div className="flex items-center gap-2 mt-0.5">
                       <p className="text-[11px] opacity-70 font-mono">{formatDateLocal(task.dueDate)} {task.dueTime ? `• ${task.dueTime}` : ''}</p>
                       {status === 'overdue' && !task.completed && <span className="text-[10px] text-red-400 font-bold uppercase tracking-wider bg-red-500/10 px-1 rounded">Atrasada</span>}
@@ -1021,6 +1036,19 @@ export default function App() {
             <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Título da Tarefa</label>
             <input type="text" required className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-blue-500" value={newTask.title} onChange={e => setNewTask({...newTask, title: e.target.value})} placeholder="Ex: Reunião" />
           </div>
+          
+          {/* NOVO: CAMPO DE NOTAS (COMPACTO) */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Notas (Opcional)</label>
+            <textarea 
+              className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-blue-500 resize-none" 
+              rows="2" 
+              value={newTask.description || ''} 
+              onChange={e => setNewTask({...newTask, description: e.target.value})} 
+              placeholder="Detalhes, links, observações..." 
+            />
+          </div>
+
           <div className="flex gap-4">
             <div className="flex-1 min-w-0">
               <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Data</label>
@@ -1085,6 +1113,8 @@ export default function App() {
               <button onClick={() => toggleTask(task.id)} className={`w-6 h-6 rounded-md border flex items-center justify-center shrink-0 active:scale-75 ${task.completed ? 'bg-blue-600 border-blue-600' : 'border-slate-500'}`}>{task.completed && <Check className="w-4 h-4 text-white" />}</button>
               <div className="flex-1 min-w-0 pointer-events-none">
                 <h3 className={`font-bold truncate ${task.completed ? 'line-through text-slate-500' : ''}`}>{task.title}</h3>
+                {/* EXIBIÇÃO DE NOTAS DE FORMA COMPACTA NA AGENDA */}
+                {task.description && <p className={`text-[11px] mt-1 line-clamp-2 leading-tight ${task.completed ? 'text-slate-600' : 'text-slate-400'}`}>{task.description}</p>}
                 <p className="text-xs flex items-center gap-2 mt-1 opacity-80"><span className="capitalize">{categoryObj?.label || 'Geral'}</span><span>•</span><span>{formatDateLocal(task.dueDate)} {task.dueTime}</span></p>
               </div>
             </SwipeableItem>
@@ -1311,7 +1341,7 @@ export default function App() {
                 <button onClick={requestNotificationPermission} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-slate-300"><BellRing className="w-5 h-5 text-slate-400" /> <span className="font-medium">Ativar Notificações</span></button>
                 <button onClick={handleLogout} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-red-500/10 text-red-400 mt-4"><LogOut className="w-5 h-5 text-red-400" /> <span className="font-medium">Terminar Sessão</span></button>
               </div>
-              <div className="p-4 border-t border-slate-800"><p className="text-center text-[10px] text-slate-500 uppercase tracking-widest">Planner Full v4.1 Oficial</p></div>
+              <div className="p-4 border-t border-slate-800"><p className="text-center text-[10px] text-slate-500 uppercase tracking-widest">Planner Full v4.3 Oficial</p></div>
             </div>
           </div>
         )}
