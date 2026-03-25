@@ -2,8 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Home, CheckSquare, Activity, Briefcase, CalendarClock, Plus, Check, ChevronLeft, ChevronRight, 
   Trash2, Edit2, X, User, Settings, BellRing, AlertCircle, Clock, GripVertical,
-  Cloud, CloudOff, RefreshCw, LogOut, Mail, Lock, ShieldCheck, ListTodo, CheckCircle2,
-  Eye, EyeOff, FileText
+  Cloud, CloudOff, RefreshCw, LogOut, Mail, Lock, ShieldCheck, ListTodo
 } from 'lucide-react';
 
 // --- IMPORTS DO FIREBASE ---
@@ -15,10 +14,6 @@ import {
   createUserWithEmailAndPassword, 
   signOut,
   GoogleAuthProvider,
-  signInWithRedirect,
-  getRedirectResult,
-  setPersistence,
-  browserLocalPersistence,
   signInWithPopup
 } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc } from 'firebase/firestore';
@@ -263,21 +258,6 @@ const AuthScreen = ({ auth }) => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    getRedirectResult(auth)
-      .then((result) => {
-        if (result) {
-           console.log("Login com Google bem-sucedido via redirect");
-        }
-      })
-      .catch((err) => {
-        console.error(err);
-        if (err.code === 'auth/operation-not-allowed') {
-          setError('ERRO: O método de login não está ativado no Firebase.');
-        }
-      });
-  }, [auth]);
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -314,14 +294,14 @@ const AuthScreen = ({ auth }) => {
     hapticFeedback(30);
     try {
       const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: 'select_account' });
+      // O método de Popup resolve o problema do redirecionamento infinito
       await signInWithPopup(auth, provider); 
     } catch (err) {
       console.error(err);
       if (err.code === 'auth/popup-closed-by-user') {
         setError('O login com Google foi cancelado.');
       } else if (err.code === 'auth/popup-blocked') {
-        setError('Pop-up bloqueado. O seu telemóvel não permite janelas flutuantes. Por favor, use Email e Senha.');
+        setError('Pop-up bloqueado. Use o botão de Email e Senha ou autorize pop-ups.');
       } else {
         setError('Erro com o Google. O Firebase suporta o domínio atual?');
       }
@@ -332,11 +312,13 @@ const AuthScreen = ({ auth }) => {
 
   return (
     <div className="min-h-[100dvh] bg-slate-900 flex flex-col justify-center items-center p-6 font-sans overflow-hidden relative">
+      {/* Efeitos de Fundo (Premium) */}
       <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-600/20 rounded-full blur-[100px] pointer-events-none"></div>
       <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-emerald-600/10 rounded-full blur-[100px] pointer-events-none"></div>
 
       <div className="w-full max-w-md animate-in fade-in slide-in-from-bottom-4 duration-700 relative z-10">
         
+        {/* LOGO E TEXTO BONITO */}
         <div className="flex flex-col items-center mb-8">
           <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-blue-700 rounded-[1.5rem] flex items-center justify-center shadow-[0_10px_30px_rgba(59,130,246,0.4)] mb-5 transform rotate-3 transition-transform hover:rotate-0 duration-300">
             <span className="text-white text-4xl font-black">P</span>
@@ -349,6 +331,7 @@ const AuthScreen = ({ auth }) => {
           </p>
         </div>
 
+        {/* FORMULÁRIO PREMIUM */}
         <form onSubmit={handleSubmit} className="bg-slate-800/60 backdrop-blur-xl p-6 sm:p-8 rounded-[2rem] border border-slate-700/50 shadow-2xl space-y-5">
           {error && (
             <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-4 rounded-2xl text-sm flex items-center gap-3 animate-in shake font-medium shadow-inner">
@@ -411,6 +394,7 @@ const AuthScreen = ({ auth }) => {
             </p>
           </div>
 
+          {/* DIVISÓRIA OU */}
           <div className="relative my-6">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-slate-700/80"></div>
@@ -420,6 +404,7 @@ const AuthScreen = ({ auth }) => {
             </div>
           </div>
 
+          {/* BOTÃO DO GOOGLE (Premium) */}
           <button 
             type="button" 
             onClick={handleGoogleLogin}
@@ -442,7 +427,7 @@ const AuthScreen = ({ auth }) => {
 
         <div className="mt-8 flex items-center justify-center gap-2 text-slate-500 opacity-60 text-[10px] uppercase font-bold tracking-widest">
           <ShieldCheck className="w-4 h-4" />
-          <span>Segurança Firebase (V4.3 Oficial)</span>
+          <span>Segurança Firebase (V3.0 Oficial)</span>
         </div>
       </div>
     </div>
@@ -460,19 +445,13 @@ export default function App() {
 
   // --- CONFIGURAÇÃO DO GOOGLE FIREBASE ---
   const [firebaseUser, setFirebaseUser] = useState(null);
-  const [syncStatus, setSyncStatus] = useState('offline');
-  
-  // --- BLOQUEIO DE SINCRONIZAÇÃO (EVITA APAGAR DADOS) ---
-  const [isDataLoaded, setIsDataLoaded] = useState(false); 
-
+  const [syncStatus, setSyncStatus] = useState('offline'); // 'offline', 'syncing', 'online'
   const dbRef = useRef(null);
   const authRef = useRef(null);
   const syncTimeoutRef = useRef(null);
 
-  const [isBalanceVisible, setIsBalanceVisible] = useLocalStorage('planner_v4_balance_visible', true);
-  const [stickyNote, setStickyNote] = useLocalStorage('planner_v4_sticky', '');
-
   useEffect(() => {
+    // AS SUAS CHAVES OFICIAIS DO FIREBASE
     const vercelFirebaseConfig = {
       apiKey: "AIzaSyBIEMS3WhSNKmHsd4XTp-B3gA7vfRDyMwU",
       authDomain: "planner-full.firebaseapp.com",
@@ -495,11 +474,6 @@ export default function App() {
 
     const app = initializeApp(finalConfig);
     const auth = getAuth(app);
-    
-    setPersistence(auth, browserLocalPersistence)
-      .then(() => {})
-      .catch((err) => { console.warn("Aviso de persistência:", err); });
-
     authRef.current = auth;
     dbRef.current = getFirestore(app);
 
@@ -507,7 +481,7 @@ export default function App() {
       setFirebaseUser(user);
       setIsInitializing(false);
       if (user) {
-        setSyncStatus('syncing');
+        setSyncStatus('online');
         loadDataFromCloud(user);
       }
     });
@@ -540,8 +514,7 @@ export default function App() {
   const [newCategoryLabel, setNewCategoryLabel] = useState('');
   const [showAddTask, setShowAddTask] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState(null);
-  // NOVO ESTADO: description
-  const [newTask, setNewTask] = useState({ title: '', category: 'meta', dueDate: '', dueTime: '', hasReminder: false, recurrence: 'none', description: '' });
+  const [newTask, setNewTask] = useState({ title: '', category: 'meta', dueDate: '', dueTime: '', hasReminder: false, recurrence: 'none' });
   const [showAddHabit, setShowAddHabit] = useState(false);
   const [newHabitLabel, setNewHabitLabel] = useState('');
   const [newDailyTask, setNewDailyTask] = useState('');
@@ -554,13 +527,13 @@ export default function App() {
   const [editPrompt, setEditPrompt] = useState(null); 
   const [activeDailyDrag, setActiveDailyDrag] = useState(null);
 
-  // --- LÓGICA DE SINCRONIZAÇÃO COM A NUVEM ---
+  // --- INTEGRAÇÃO COM FIRESTORE (BANCO DE DADOS) ---
   const loadDataFromCloud = async (user) => {
     if (!dbRef.current || !user) return;
     setSyncStatus('syncing');
     try {
-      const appId = typeof __app_id !== 'undefined' ? __app_id : 'planner-v3';
-      const docPath = doc(dbRef.current, 'artifacts', appId, 'users', user.uid, 'plannerData', 'main_v3');
+      // Caminho fixo para garantir que os dados NUNCA se perdem
+      const docPath = doc(dbRef.current, 'artifacts', 'planner-v3', 'users', user.uid, 'plannerData', 'main_v3');
       const snapshot = await getDoc(docPath);
       
       if (snapshot.exists()) {
@@ -574,29 +547,25 @@ export default function App() {
         if (data.portfolio) setPortfolio(data.portfolio);
         if (data.portfolioUpdateDate) setPortfolioUpdateDate(data.portfolioUpdateDate);
         if (data.prevPortfolioBalance) setPrevPortfolioBalance(data.prevPortfolioBalance);
-        if (data.stickyNote !== undefined) setStickyNote(data.stickyNote || '');
       }
       setSyncStatus('online');
     } catch (error) {
       console.error("Erro ao carregar da nuvem:", error);
       setSyncStatus('offline');
-    } finally {
-      setIsDataLoaded(true);
     }
   };
 
   useEffect(() => {
-    if (!firebaseUser || !dbRef.current || !isDataLoaded) return;
+    if (!firebaseUser || !dbRef.current) return;
 
     const saveDataToCloud = async () => {
       setSyncStatus('syncing');
       try {
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'planner-v3';
-        const docPath = doc(dbRef.current, 'artifacts', appId, 'users', firebaseUser.uid, 'plannerData', 'main_v3');
+        // Caminho fixo para garantir que os dados NUNCA se perdem
+        const docPath = doc(dbRef.current, 'artifacts', 'planner-v3', 'users', firebaseUser.uid, 'plannerData', 'main_v3');
         await setDoc(docPath, {
           tasks, taskCategories, habitsList, habits, dailyTasks, 
           portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance,
-          stickyNote, 
           lastUpdated: new Date().toISOString()
         }, { merge: true });
         setSyncStatus('online');
@@ -609,8 +578,9 @@ export default function App() {
     clearTimeout(syncTimeoutRef.current);
     syncTimeoutRef.current = setTimeout(() => { saveDataToCloud(); }, 2000);
     return () => clearTimeout(syncTimeoutRef.current);
-  }, [tasks, taskCategories, habitsList, habits, dailyTasks, portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance, stickyNote, firebaseUser, isDataLoaded]);
+  }, [tasks, taskCategories, habitsList, habits, dailyTasks, portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance, firebaseUser]);
 
+  // --- LOGOUT ---
   const handleLogout = async () => {
     if (authRef.current) {
       await signOut(authRef.current);
@@ -619,8 +589,6 @@ export default function App() {
       setHabits({});
       setDailyTasks({});
       setPortfolio({});
-      setStickyNote('');
-      setIsDataLoaded(false); 
     }
   };
 
@@ -632,32 +600,70 @@ export default function App() {
   useEffect(() => {
     const interval = setInterval(() => {
       const now = new Date();
-      let updatedTasks = false;
-      const newTasks = tasks.map(task => {
-        if (!task || task.completed || !task.hasReminder || !task.dueDate || !task.dueTime) return task;
-        try {
-          const [y, m, d] = task.dueDate.split('-');
-          const [h, min] = task.dueTime.split(':');
-          const taskDateTime = new Date(y, m-1, d, h, min);
-          const diffMs = taskDateTime - now;
-          const diffHours = diffMs / (1000 * 60 * 60);
+      const todayStrLocal = now.toISOString().split('T')[0];
 
-          let t = { ...task };
-          if (diffHours <= 24 && diffHours > 23 && !t.notif1d) {
-            sendNativeNotification("Metas de Amanhã", `Alerta: ${t.title}`);
-            t.notif1d = true; updatedTasks = true;
-          }
-          if (diffHours <= 1 && diffHours > 0 && !t.notif1h) {
-            sendNativeNotification("Atenção", `A meta "${t.title}" vence em 1 hora!`);
-            t.notif1h = true; updatedTasks = true;
-          }
-          return t;
-        } catch(e) { return task; }
+      // 1. Verifica os alertas da Agenda
+      setTasks(prevTasks => {
+        let updatedTasks = false;
+        const newTasks = prevTasks.map(task => {
+          if (!task || task.completed || !task.hasReminder || !task.dueDate || !task.dueTime) return task;
+          try {
+            const [y, m, d] = task.dueDate.split('-');
+            const [h, min] = task.dueTime.split(':');
+            const taskDateTime = new Date(y, m-1, d, h, min);
+            const diffMs = taskDateTime - now;
+            const diffHours = diffMs / (1000 * 60 * 60);
+
+            let t = { ...task };
+            if (diffHours <= 24 && diffHours > 23 && !t.notif1d) {
+              sendNativeNotification("Metas de Amanhã", `Alerta: ${t.title}`);
+              t.notif1d = true; updatedTasks = true;
+            }
+            if (diffHours <= 1 && diffHours > 0 && !t.notif1h) {
+              sendNativeNotification("Atenção", `A meta "${t.title}" vence em 1 hora!`);
+              t.notif1h = true; updatedTasks = true;
+            }
+            // NOVO: ALERTA DE 15 MINUTOS NA AGENDA
+            if (diffHours <= 0.25 && diffHours > 0 && !t.notif15m) {
+              sendNativeNotification("🚨 Quase lá!", `O compromisso "${t.title}" começa em 15 minutos!`);
+              t.notif15m = true; updatedTasks = true;
+            }
+            return t;
+          } catch(e) { return task; }
+        });
+        return updatedTasks ? newTasks : prevTasks;
       });
-      if (updatedTasks) setTasks(newTasks);
-    }, 60000); 
+
+      // 2. Verifica os alertas do Foco do Dia (Rotina)
+      setDailyTasks(prevDaily => {
+        let updatedDaily = false;
+        const newDaily = { ...prevDaily };
+        if (newDaily[todayStrLocal]) {
+            newDaily[todayStrLocal] = newDaily[todayStrLocal].map(task => {
+                if (!task || task.completed || !task.hasReminder || !task.time) return task;
+                try {
+                    const [y, m, d] = todayStrLocal.split('-');
+                    const [h, min] = task.time.split(':');
+                    const taskDateTime = new Date(y, m-1, d, h, min);
+                    const diffMs = taskDateTime - now;
+                    const diffHours = diffMs / (1000 * 60 * 60);
+
+                    let t = { ...task };
+                    // NOVO: ALERTA DE 15 MINUTOS NO FOCO DO DIA
+                    if (diffHours <= 0.25 && diffHours > 0 && !t.notif15m) {
+                        sendNativeNotification("🚨 Foco do Dia", `O compromisso "${t.text}" começa em 15 minutos!`);
+                        t.notif15m = true; updatedDaily = true;
+                    }
+                    return t;
+                } catch(e) { return task; }
+            });
+        }
+        return updatedDaily ? newDaily : prevDaily;
+      });
+
+    }, 60000); // Roda a cada 1 minuto
     return () => clearInterval(interval);
-  }, [tasks]);
+  }, []);
 
   const getTaskStatus = (dueDateStr, completed) => {
     if (completed) return 'completed';
@@ -697,18 +703,6 @@ export default function App() {
     });
   }, [tasks, todayObj]);
 
-  const sortedTasksGlobally = useMemo(() => {
-    return [...tasks].sort((a, b) => {
-      if (a.completed !== b.completed) return a.completed ? 1 : -1;
-      const dateA = parseLocalDate(a.dueDate).getTime();
-      const dateB = parseLocalDate(b.dueDate).getTime();
-      if (isNaN(dateA) && isNaN(dateB)) return 0;
-      if (isNaN(dateA)) return 1;
-      if (isNaN(dateB)) return -1;
-      return dateA - dateB;
-    });
-  }, [tasks]);
-
   const dayTasksForDashboard = Array.isArray(safeDailyTasks[todayStr]) ? safeDailyTasks[todayStr] : [];
   const hasUrgentTasks = dayTasksForDashboard.some(t => t && !t.completed) || dashboardAgendaTasks.some(t => t && !t.completed && (getTaskStatus(t.dueDate, false) === 'today' || getTaskStatus(t.dueDate, false) === 'overdue'));
 
@@ -738,7 +732,6 @@ export default function App() {
   const handleSaveSimpleEdit = (e) => {
     e.preventDefault();
     if (!editPrompt || !editPrompt.label.trim()) return;
-    
     if (editPrompt.type === 'habit') {
       setHabitsList(habitsList.map(h => h.id === editPrompt.id ? { ...h, label: editPrompt.label } : h));
     } else if (editPrompt.type === 'category') {
@@ -746,32 +739,10 @@ export default function App() {
     } else if (editPrompt.type === 'portfolioCat') {
       setPortfolioCategories(portfolioCategories.map(c => c.id === editPrompt.id ? { ...c, label: editPrompt.label } : c));
     } else if (editPrompt.type === 'dailyTask') {
-      
       setDailyTasks(prev => {
-        const oldStr = editPrompt.originalDateStr;
-        const newStr = editPrompt.dateStr;
-        const newState = { ...prev };
-        
-        // Procurar tarefa no dia original
-        const oldList = [...(newState[oldStr] || [])];
-        const taskIndex = oldList.findIndex(t => t.id === editPrompt.id);
-
-        if (taskIndex > -1) {
-          const taskToMove = { ...oldList[taskIndex], text: editPrompt.label, time: editPrompt.time };
-
-          if (oldStr === newStr) {
-            oldList[taskIndex] = taskToMove;
-            newState[oldStr] = oldList;
-          } else {
-            oldList.splice(taskIndex, 1);
-            newState[oldStr] = oldList;
-            
-            const newList = [...(newState[newStr] || [])];
-            newList.push(taskToMove);
-            newState[newStr] = newList;
-          }
-        }
-        return newState;
+        const dStr = editPrompt.dateStr;
+        const dayList = prev[dStr] || [];
+        return { ...prev, [dStr]: dayList.map(t => t.id === editPrompt.id ? { ...t, text: editPrompt.label, time: editPrompt.time } : t) };
       });
     }
     setEditPrompt(null);
@@ -807,20 +778,20 @@ export default function App() {
     } else {
       setTasks([...tasks, { ...newTask, id: Date.now(), completed: false }]);
     }
-    setNewTask({ title: '', category: taskCategories[0]?.id || 'meta', dueDate: '', dueTime: '', recurrence: 'none', hasReminder: false, description: '' });
+    setNewTask({ title: '', category: taskCategories[0]?.id || 'meta', dueDate: '', dueTime: '', recurrence: 'none', hasReminder: false });
     setShowAddTask(false);
     setEditingTaskId(null);
   };
 
   const startEditTask = (task) => {
-    setNewTask({ title: task.title, category: task.category, dueDate: task.dueDate, dueTime: task.dueTime || '', recurrence: task.recurrence || 'none', hasReminder: task.hasReminder || false, description: task.description || '' });
+    setNewTask({ title: task.title, category: task.category, dueDate: task.dueDate, dueTime: task.dueTime || '', recurrence: task.recurrence || 'none', hasReminder: task.hasReminder || false });
     setEditingTaskId(task.id);
     setShowAddTask(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const cancelEditTask = () => {
-    setNewTask({ title: '', category: taskCategories[0]?.id || 'meta', dueDate: '', recurrence: 'none', description: '' });
+    setNewTask({ title: '', category: taskCategories[0]?.id || 'meta', dueDate: '', recurrence: 'none' });
     setEditingTaskId(null);
     setShowAddTask(false);
     setIsEditingCategories(false);
@@ -920,39 +891,9 @@ export default function App() {
       <div className="bg-slate-800 p-5 rounded-3xl border border-emerald-500/40 shadow-[0_15px_40px_-10px_rgba(16,185,129,0.25)] relative overflow-hidden">
         <div className="absolute top-0 right-0 -mr-6 -mt-6 w-32 h-32 bg-emerald-500/20 rounded-full blur-2xl pointer-events-none"></div>
         <div className="relative z-10 flex flex-col justify-center">
-          
-          <div className="flex items-center justify-between mb-1.5">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-400/90 flex items-center gap-1.5">
-              <Briefcase className="w-3.5 h-3.5"/> Total Investido
-            </p>
-            <button 
-              onClick={() => { setIsBalanceVisible(!isBalanceVisible); hapticFeedback(10); }} 
-              className="p-1.5 text-emerald-400/80 hover:text-emerald-300 transition-colors rounded-full hover:bg-emerald-500/10 active:scale-90"
-            >
-              {isBalanceVisible ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-            </button>
-          </div>
-          
-          <p className="text-3xl sm:text-4xl font-bold font-mono tracking-tighter break-words text-white drop-shadow-md">
-            {isBalanceVisible 
-              ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(currentPortfolioTotal)
-              : 'R$ •••••'
-            }
-          </p>
+          <p className="text-[11px] font-bold uppercase tracking-wider mb-1.5 text-emerald-400/90 flex items-center gap-1.5"><Briefcase className="w-3.5 h-3.5"/> Total Investido</p>
+          <p className="text-3xl sm:text-4xl font-bold font-mono tracking-tighter break-words text-white drop-shadow-md">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(currentPortfolioTotal)}</p>
         </div>
-      </div>
-
-      <div className="bg-slate-800/80 p-4 rounded-3xl border border-slate-700/50 shadow-sm relative overflow-hidden group">
-        <div className="absolute top-0 right-0 w-20 h-20 bg-blue-500/5 rounded-full -mr-10 -mt-10 blur-xl pointer-events-none transition-all group-focus-within:bg-blue-500/10"></div>
-        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-          <FileText className="w-4 h-4 text-blue-400" /> Bloco de Notas Rápido
-        </h3>
-        <textarea
-          value={stickyNote}
-          onChange={(e) => setStickyNote(e.target.value)}
-          placeholder="Anotações importantes..."
-          className="w-full bg-transparent text-sm text-slate-200 outline-none resize-none min-h-[80px] placeholder:text-slate-600 focus:placeholder:text-slate-500 transition-colors"
-        />
       </div>
 
       <div>
@@ -967,7 +908,7 @@ export default function App() {
               return (
                 <div key={task.id} data-daily-drag-id={task.id} className={dragClasses}>
                   <SwipeableItem 
-                    onEdit={() => setEditPrompt({ type: 'dailyTask', id: task.id, label: task.text, originalDateStr: todayStr, dateStr: todayStr, time: task.time || '' })} 
+                    onEdit={() => setEditPrompt({ type: 'dailyTask', id: task.id, label: task.text, dateStr: todayStr, time: task.time || '' })} 
                     onDeleteRequest={() => setDeletePrompt({ type: 'dailyTask', id: task.id, title: task.text, dateStr: todayStr })} 
                     frontClass="bg-slate-800/80 border-slate-700/80 p-3.5 flex items-center justify-between" wrapperClass="mb-0"
                   >
@@ -1006,8 +947,6 @@ export default function App() {
                   <button onClick={() => toggleTask(task.id)} className={`w-6 h-6 rounded-md border flex items-center justify-center transition-all duration-300 shrink-0 active:scale-75 ${task.completed ? 'bg-blue-600 border-blue-600' : 'border-slate-500'}`}>{task.completed && <Check className="w-4 h-4 text-white" />}</button>
                   <div className="flex-1 min-w-0 pointer-events-none">
                     <h3 className={`font-medium text-sm truncate transition-colors ${task.completed ? 'line-through text-slate-500' : ''}`}>{task.title}</h3>
-                    {/* EXIBIÇÃO DE NOTAS DE FORMA COMPACTA NO DASHBOARD */}
-                    {task.description && <p className={`text-[10px] mt-0.5 line-clamp-1 ${task.completed ? 'text-slate-600' : 'text-slate-400'}`}>{task.description}</p>}
                     <div className="flex items-center gap-2 mt-0.5">
                       <p className="text-[11px] opacity-70 font-mono">{formatDateLocal(task.dueDate)} {task.dueTime ? `• ${task.dueTime}` : ''}</p>
                       {status === 'overdue' && !task.completed && <span className="text-[10px] text-red-400 font-bold uppercase tracking-wider bg-red-500/10 px-1 rounded">Atrasada</span>}
@@ -1036,19 +975,6 @@ export default function App() {
             <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Título da Tarefa</label>
             <input type="text" required className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-blue-500" value={newTask.title} onChange={e => setNewTask({...newTask, title: e.target.value})} placeholder="Ex: Reunião" />
           </div>
-          
-          {/* NOVO: CAMPO DE NOTAS (COMPACTO) */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Notas (Opcional)</label>
-            <textarea 
-              className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-blue-500 resize-none" 
-              rows="2" 
-              value={newTask.description || ''} 
-              onChange={e => setNewTask({...newTask, description: e.target.value})} 
-              placeholder="Detalhes, links, observações..." 
-            />
-          </div>
-
           <div className="flex gap-4">
             <div className="flex-1 min-w-0">
               <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Data</label>
@@ -1104,7 +1030,7 @@ export default function App() {
 
       <div className="space-y-1">
         {tasks.length > 0 && !showAddTask && <SwipeHint />}
-        {sortedTasksGlobally.map(task => {
+        {dashboardAgendaTasks.map(task => {
           const status = getTaskStatus(task.dueDate, task.completed);
           const classStr = getStatusColors(status);
           const categoryObj = taskCategories.find(c => c.id === task.category);
@@ -1113,8 +1039,6 @@ export default function App() {
               <button onClick={() => toggleTask(task.id)} className={`w-6 h-6 rounded-md border flex items-center justify-center shrink-0 active:scale-75 ${task.completed ? 'bg-blue-600 border-blue-600' : 'border-slate-500'}`}>{task.completed && <Check className="w-4 h-4 text-white" />}</button>
               <div className="flex-1 min-w-0 pointer-events-none">
                 <h3 className={`font-bold truncate ${task.completed ? 'line-through text-slate-500' : ''}`}>{task.title}</h3>
-                {/* EXIBIÇÃO DE NOTAS DE FORMA COMPACTA NA AGENDA */}
-                {task.description && <p className={`text-[11px] mt-1 line-clamp-2 leading-tight ${task.completed ? 'text-slate-600' : 'text-slate-400'}`}>{task.description}</p>}
                 <p className="text-xs flex items-center gap-2 mt-1 opacity-80"><span className="capitalize">{categoryObj?.label || 'Geral'}</span><span>•</span><span>{formatDateLocal(task.dueDate)} {task.dueTime}</span></p>
               </div>
             </SwipeableItem>
@@ -1163,11 +1087,7 @@ export default function App() {
           <div className="space-y-2 mt-3">
             {dayTasks.map(task => (
               <div key={task.id} data-daily-drag-id={task.id} className={activeDailyDrag === task.id ? 'scale-[1.02] shadow-2xl ring-1 ring-blue-500 z-50 rounded-xl' : 'transition-all duration-200'}>
-                <SwipeableItem 
-                  onEdit={() => setEditPrompt({ type: 'dailyTask', id: task.id, label: task.text, originalDateStr: dateStr, dateStr: dateStr, time: task.time || '' })} 
-                  onDeleteRequest={() => setDeletePrompt({ type: 'dailyTask', id: task.id, title: task.text, dateStr: dateStr })} 
-                  frontClass="bg-slate-800/80 border-slate-700/80 p-3.5 flex items-center justify-between" wrapperClass="mb-0"
-                >
+                <SwipeableItem onEdit={() => setEditPrompt({ type: 'dailyTask', id: task.id, label: task.text, dateStr: dateStr, time: task.time || '' })} onDeleteRequest={() => setDeletePrompt({ type: 'dailyTask', id: task.id, title: task.text, dateStr: dateStr })} frontClass="bg-slate-800/80 border-slate-700/80 p-3.5 flex items-center justify-between" wrapperClass="mb-0">
                   <label className="flex items-center gap-3 cursor-pointer flex-1 w-full min-w-0 pr-2">
                     <div className="relative flex items-center justify-center w-6 h-6 shrink-0">
                       <input type="checkbox" checked={!!task.completed} onChange={() => toggleDailyTask(dateStr, task.id)} className="peer sr-only"/>
@@ -1341,7 +1261,7 @@ export default function App() {
                 <button onClick={requestNotificationPermission} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-slate-300"><BellRing className="w-5 h-5 text-slate-400" /> <span className="font-medium">Ativar Notificações</span></button>
                 <button onClick={handleLogout} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-red-500/10 text-red-400 mt-4"><LogOut className="w-5 h-5 text-red-400" /> <span className="font-medium">Terminar Sessão</span></button>
               </div>
-              <div className="p-4 border-t border-slate-800"><p className="text-center text-[10px] text-slate-500 uppercase tracking-widest">Planner Full v4.3 Oficial</p></div>
+              <div className="p-4 border-t border-slate-800"><p className="text-center text-[10px] text-slate-500 uppercase tracking-widest">Planner Full v3.0 Oficial</p></div>
             </div>
           </div>
         )}
@@ -1365,20 +1285,10 @@ export default function App() {
             <form onSubmit={handleSaveSimpleEdit} className="bg-slate-800 rounded-3xl p-6 w-full max-w-[320px] border border-slate-700 shadow-2xl">
               <h3 className="text-xl font-bold text-white mb-4">Editar</h3>
               <div className="space-y-4 mb-6">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Nome</label>
-                  <input type="text" required autoFocus className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none" value={editPrompt.label} onChange={e => setEditPrompt({...editPrompt, label: e.target.value})} />
-                </div>
+                <input type="text" required autoFocus className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none" value={editPrompt.label} onChange={e => setEditPrompt({...editPrompt, label: e.target.value})} />
                 {editPrompt.type === 'dailyTask' && (
                   <div className="flex gap-3">
-                    <div className="flex-1 min-w-0">
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Data</label>
-                      <input type="date" required className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none color-scheme-dark" value={editPrompt.dateStr} onChange={e => setEditPrompt({...editPrompt, dateStr: e.target.value})} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Hora</label>
-                      <input type="time" className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none color-scheme-dark" value={editPrompt.time || ''} onChange={e => setEditPrompt({...editPrompt, time: e.target.value})} />
-                    </div>
+                    <input type="time" className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none color-scheme-dark" value={editPrompt.time || ''} onChange={e => setEditPrompt({...editPrompt, time: e.target.value})} />
                   </div>
                 )}
               </div>
