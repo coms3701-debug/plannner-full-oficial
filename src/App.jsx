@@ -90,6 +90,7 @@ const formatDateLocal = (dateStr) => {
   } catch (e) { return ''; }
 };
 
+// --- MEMÓRIA LOCAL CORRIGIDA E BLINDADA ---
 function useLocalStorage(key, initialValue) {
   const [storedValue, setStoredValue] = useState(() => {
     try {
@@ -102,9 +103,13 @@ function useLocalStorage(key, initialValue) {
 
   const setValue = (value) => {
     try {
-      const valueToStore = value instanceof Function ? value(storedValue) : value;
-      setStoredValue(valueToStore);
-      window.localStorage.setItem(key, JSON.stringify(valueToStore));
+      // Esta alteração (prev => ...) impede definitivamente que o relógio de fundo
+      // apague as anotações novas com base numa memória antiga
+      setStoredValue((prevValue) => {
+        const valueToStore = value instanceof Function ? value(prevValue) : value;
+        window.localStorage.setItem(key, JSON.stringify(valueToStore));
+        return valueToStore;
+      });
     } catch (error) { }
   };
 
@@ -626,7 +631,7 @@ export default function App() {
     }
   };
 
-  // --- PWA E ALERTAS SEGUROS (INCLUI AVISO 15 MINUTOS) ---
+  // --- PWA E ALERTAS SEGUROS (INCLUI AVISO 15 MINUTOS SEM APAGAR DADOS) ---
   const todayObj = new Date(); 
   todayObj.setHours(0, 0, 0, 0);
   const todayStr = new Date(todayObj.getTime() - (todayObj.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
@@ -636,43 +641,40 @@ export default function App() {
       const now = new Date();
       const todayStrLocal = now.toISOString().split('T')[0];
 
-      // 1. Verifica Alertas da Agenda
-      setTasks(prevTasks => {
-        let updatedTasks = false;
-        const newTasks = prevTasks.map(task => {
-          if (!task || task.completed || !task.hasReminder || !task.dueDate || !task.dueTime) return task;
-          try {
-            const [y, m, d] = task.dueDate.split('-');
-            const [h, min] = task.dueTime.split(':');
-            const taskDateTime = new Date(y, m-1, d, h, min);
-            const diffMs = taskDateTime - now;
-            const diffHours = diffMs / (1000 * 60 * 60);
+      // 1. Verifica Alertas da Agenda sem sobrescrever state fixo
+      let updatedTasks = false;
+      const newTasks = tasks.map(task => {
+        if (!task || task.completed || !task.hasReminder || !task.dueDate || !task.dueTime) return task;
+        try {
+          const [y, m, d] = task.dueDate.split('-');
+          const [h, min] = task.dueTime.split(':');
+          const taskDateTime = new Date(y, m-1, d, h, min);
+          const diffMs = taskDateTime - now;
+          const diffHours = diffMs / (1000 * 60 * 60);
 
-            let t = { ...task };
-            if (diffHours <= 24 && diffHours > 23 && !t.notif1d) {
-              sendNativeNotification("Metas de Amanhã", `Alerta: ${t.title}`);
-              t.notif1d = true; updatedTasks = true;
-            }
-            if (diffHours <= 1 && diffHours > 0 && !t.notif1h) {
-              sendNativeNotification("Atenção", `A meta "${t.title}" vence em 1 hora!`);
-              t.notif1h = true; updatedTasks = true;
-            }
-            // ALERTA DE 15 MINUTOS
-            if (diffHours <= 0.25 && diffHours > 0 && !t.notif15m) {
-              sendNativeNotification("🚨 Quase lá!", `O compromisso "${t.title}" começa em 15 minutos!`);
-              t.notif15m = true; updatedTasks = true;
-            }
-            return t;
-          } catch(e) { return task; }
-        });
-        return updatedTasks ? newTasks : prevTasks;
+          let t = { ...task };
+          if (diffHours <= 24 && diffHours > 23 && !t.notif1d) {
+            sendNativeNotification("Metas de Amanhã", `Alerta: ${t.title}`);
+            t.notif1d = true; updatedTasks = true;
+          }
+          if (diffHours <= 1 && diffHours > 0 && !t.notif1h) {
+            sendNativeNotification("Atenção", `A meta "${t.title}" vence em 1 hora!`);
+            t.notif1h = true; updatedTasks = true;
+          }
+          // ALERTA DE 15 MINUTOS
+          if (diffHours <= 0.25 && diffHours > 0 && !t.notif15m) {
+            sendNativeNotification("🚨 Quase lá!", `O compromisso "${t.title}" começa em 15 minutos!`);
+            t.notif15m = true; updatedTasks = true;
+          }
+          return t;
+        } catch(e) { return task; }
       });
+      if (updatedTasks) setTasks(newTasks);
 
       // 2. Verifica Alertas do Foco do Dia
-      setDailyTasks(prevDaily => {
-        let updatedDaily = false;
-        const todayList = prevDaily[todayStrLocal] || [];
-        if (todayList.length === 0) return prevDaily;
+      let updatedDaily = false;
+      const todayList = dailyTasks[todayStrLocal] || [];
+      if (todayList.length > 0) {
         const newList = todayList.map(task => {
             if (!task || task.completed || !task.hasReminder || !task.time) return task;
             try {
@@ -690,12 +692,11 @@ export default function App() {
                 return t;
             } catch(e) { return task; }
         });
-        return updatedDaily ? { ...prevDaily, [todayStrLocal]: newList } : prevDaily;
-      });
-
+        if (updatedDaily) setDailyTasks({ ...dailyTasks, [todayStrLocal]: newList });
+      }
     }, 60000); 
     return () => clearInterval(interval);
-  }, []);
+  }, [tasks, dailyTasks]);
 
   const getTaskStatus = (dueDateStr, completed) => {
     if (completed) return 'completed';
