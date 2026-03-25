@@ -90,6 +90,13 @@ const formatDateLocal = (dateStr) => {
   } catch (e) { return ''; }
 };
 
+// --- CORREÇÃO DO FUSO HORÁRIO (EVITA QUE TAREFAS À NOITE VÃO PARA AMANHÃ) ---
+const getLocalYYYYMMDD = (d) => {
+  if (!d || isNaN(d.getTime())) return '';
+  const tzOffset = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - tzOffset).toISOString().split('T')[0];
+};
+
 // --- MEMÓRIA LOCAL CORRIGIDA E BLINDADA ---
 function useLocalStorage(key, initialValue) {
   const [storedValue, setStoredValue] = useState(() => {
@@ -527,7 +534,8 @@ export default function App() {
   const [habits, setHabits] = useLocalStorage('planner_v3_habits', {});
   const [dailyTasks, setDailyTasks] = useLocalStorage('planner_v3_dailyTasks', {}); 
   const [portfolioCategoriesRaw, setPortfolioCategories] = useLocalStorage('planner_v3_portfolioCats', INITIAL_PORTFOLIO_CATEGORIES);
-  const [portfolioUpdateDate, setPortfolioUpdateDate] = useLocalStorage('planner_v3_portfolioDate', new Date().toISOString().split('T')[0]);
+  // Usa o timezone corrigido para iniciar
+  const [portfolioUpdateDate, setPortfolioUpdateDate] = useLocalStorage('planner_v3_portfolioDate', getLocalYYYYMMDD(new Date()));
   const [prevPortfolioBalance, setPrevPortfolioBalance] = useLocalStorage('planner_v3_prevBalance', '');
   const [portfolio, setPortfolio] = useLocalStorage('planner_v3_portfolio', {});
 
@@ -631,50 +639,56 @@ export default function App() {
     }
   };
 
-  // --- PWA E ALERTAS SEGUROS (INCLUI AVISO 15 MINUTOS SEM APAGAR DADOS) ---
+  // --- PWA E ALERTAS SEGUROS (COM FUSO HORÁRIO LOCAL CORRIGIDO E ATUALIZAÇÃO SEGURA) ---
   const todayObj = new Date(); 
   todayObj.setHours(0, 0, 0, 0);
-  const todayStr = new Date(todayObj.getTime() - (todayObj.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+  const todayStr = getLocalYYYYMMDD(todayObj);
 
   useEffect(() => {
     const interval = setInterval(() => {
       const now = new Date();
-      const todayStrLocal = now.toISOString().split('T')[0];
+      const todayStrLocal = getLocalYYYYMMDD(now);
 
-      // 1. Verifica Alertas da Agenda sem sobrescrever state fixo
-      let updatedTasks = false;
-      const newTasks = tasks.map(task => {
-        if (!task || task.completed || !task.hasReminder || !task.dueDate || !task.dueTime) return task;
-        try {
-          const [y, m, d] = task.dueDate.split('-');
-          const [h, min] = task.dueTime.split(':');
-          const taskDateTime = new Date(y, m-1, d, h, min);
-          const diffMs = taskDateTime - now;
-          const diffHours = diffMs / (1000 * 60 * 60);
+      // 1. Verifica Alertas da Agenda via PrevState
+      setTasks(prevTasks => {
+        let updatedTasks = false;
+        const safePrev = Array.isArray(prevTasks) ? prevTasks : [];
+        const newTasks = safePrev.map(task => {
+          if (!task || task.completed || !task.hasReminder || !task.dueDate || !task.dueTime) return task;
+          try {
+            const [y, m, d] = task.dueDate.split('-');
+            const [h, min] = task.dueTime.split(':');
+            const taskDateTime = new Date(y, m-1, d, h, min);
+            const diffMs = taskDateTime - now;
+            const diffHours = diffMs / (1000 * 60 * 60);
 
-          let t = { ...task };
-          if (diffHours <= 24 && diffHours > 23 && !t.notif1d) {
-            sendNativeNotification("Metas de Amanhã", `Alerta: ${t.title}`);
-            t.notif1d = true; updatedTasks = true;
-          }
-          if (diffHours <= 1 && diffHours > 0 && !t.notif1h) {
-            sendNativeNotification("Atenção", `A meta "${t.title}" vence em 1 hora!`);
-            t.notif1h = true; updatedTasks = true;
-          }
-          // ALERTA DE 15 MINUTOS
-          if (diffHours <= 0.25 && diffHours > 0 && !t.notif15m) {
-            sendNativeNotification("🚨 Quase lá!", `O compromisso "${t.title}" começa em 15 minutos!`);
-            t.notif15m = true; updatedTasks = true;
-          }
-          return t;
-        } catch(e) { return task; }
+            let t = { ...task };
+            if (diffHours <= 24 && diffHours > 23 && !t.notif1d) {
+              sendNativeNotification("Metas de Amanhã", `Alerta: ${t.title}`);
+              t.notif1d = true; updatedTasks = true;
+            }
+            if (diffHours <= 1 && diffHours > 0 && !t.notif1h) {
+              sendNativeNotification("Atenção", `A meta "${t.title}" vence em 1 hora!`);
+              t.notif1h = true; updatedTasks = true;
+            }
+            // ALERTA DE 15 MINUTOS
+            if (diffHours <= 0.25 && diffHours > 0 && !t.notif15m) {
+              sendNativeNotification("🚨 Quase lá!", `O compromisso "${t.title}" começa em 15 minutos!`);
+              t.notif15m = true; updatedTasks = true;
+            }
+            return t;
+          } catch(e) { return task; }
+        });
+        return updatedTasks ? newTasks : prevTasks;
       });
-      if (updatedTasks) setTasks(newTasks);
 
-      // 2. Verifica Alertas do Foco do Dia
-      let updatedDaily = false;
-      const todayList = dailyTasks[todayStrLocal] || [];
-      if (todayList.length > 0) {
+      // 2. Verifica Alertas do Foco do Dia via PrevState
+      setDailyTasks(prevDaily => {
+        let updatedDaily = false;
+        const safePrev = prevDaily || {};
+        const todayList = safePrev[todayStrLocal] || [];
+        if (todayList.length === 0) return safePrev;
+        
         const newList = todayList.map(task => {
             if (!task || task.completed || !task.hasReminder || !task.time) return task;
             try {
@@ -692,11 +706,12 @@ export default function App() {
                 return t;
             } catch(e) { return task; }
         });
-        if (updatedDaily) setDailyTasks({ ...dailyTasks, [todayStrLocal]: newList });
-      }
+        return updatedDaily ? { ...safePrev, [todayStrLocal]: newList } : safePrev;
+      });
+
     }, 60000); 
     return () => clearInterval(interval);
-  }, [tasks, dailyTasks]);
+  }, []); // Dependência VAZIA = o relógio nunca reseta, roda sempre certinho
 
   const getTaskStatus = (dueDateStr, completed) => {
     if (completed) return 'completed';
@@ -786,7 +801,6 @@ export default function App() {
       setPortfolioCategories(portfolioCategories.map(c => c.id === editPrompt.id ? { ...c, label: editPrompt.label } : c));
     } else if (editPrompt.type === 'dailyTask') {
       setDailyTasks(prev => {
-        // Migração de Data suportada aqui
         const oldStr = editPrompt.originalDateStr || editPrompt.dateStr;
         const newStr = editPrompt.dateStr;
         const newState = { ...prev };
@@ -820,8 +834,8 @@ export default function App() {
     if (recurrence === 'daily') d.setDate(d.getDate() + 1);
     if (recurrence === 'weekly') d.setDate(d.getDate() + 7);
     if (recurrence === 'monthly') d.setMonth(d.getMonth() + 1);
-    if (recurrence === 'yearly') d.setFullYear(d.getFullYear() + 1); // Anual
-    return d.toISOString().split('T')[0];
+    if (recurrence === 'yearly') d.setFullYear(d.getFullYear() + 1);
+    return getLocalYYYYMMDD(d); // Usa o local seguro
   };
 
   const toggleTask = (id) => {
@@ -897,7 +911,7 @@ export default function App() {
   const handleAddDailyTask = (e) => {
     e.preventDefault();
     if (!newDailyTask.trim()) return;
-    const dateStr = selectedDate.toISOString().split('T')[0];
+    const dateStr = getLocalYYYYMMDD(selectedDate); // Fuso horário seguro
     const nTask = { id: Date.now(), text: newDailyTask.trim(), time: newDailyTaskTime, hasReminder: newDailyTaskReminder, completed: false };
     setDailyTasks(prev => ({ ...prev, [dateStr]: [...(prev[dateStr] || []), nTask] }));
     setNewDailyTask('');
@@ -929,7 +943,7 @@ export default function App() {
     if (dropZone && dropZone.dataset.dailyDragId !== String(draggingDailyId.current)) {
       const targetId = Number(dropZone.dataset.dailyDragId);
       setDailyTasks(prev => {
-        const activeStr = selectedDate ? selectedDate.toISOString().split('T')[0] : todayStr;
+        const activeStr = selectedDate ? getLocalYYYYMMDD(selectedDate) : todayStr;
         const todayList = prev[activeStr] || [];
         const arr = [...todayList];
         const idx1 = arr.findIndex(t => t && t.id === draggingDailyId.current);
@@ -1152,7 +1166,7 @@ export default function App() {
   );
 
   const renderRoutine = () => {
-    const dateStr = selectedDate.toISOString().split('T')[0];
+    const dateStr = getLocalYYYYMMDD(selectedDate);
     const dayHabits = safeHabits[dateStr] || {};
     const dayTasks = (Array.isArray(safeDailyTasks[dateStr]) ? safeDailyTasks[dateStr] : []).filter(t => t && t.id);
     const totalItems = habitsList.length + dayTasks.length;
