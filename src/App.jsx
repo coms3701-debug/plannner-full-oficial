@@ -1,469 +1,32 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { 
-  Home, CheckSquare, Activity, Briefcase, CalendarClock, Plus, Check, ChevronLeft, ChevronRight, 
+import {
+  Home, CheckSquare, Activity, Briefcase, CalendarClock, Plus, Check, ChevronLeft, ChevronRight,
   Trash2, Edit2, X, User, Settings, BellRing, AlertCircle, Clock, GripVertical,
-  Cloud, CloudOff, RefreshCw, LogOut, Mail, Lock, ShieldCheck, ListTodo, CheckCircle2,
-  Eye, EyeOff, FileText
+  Cloud, CloudOff, RefreshCw, LogOut, ListTodo, CheckCircle2,
+  Eye, EyeOff, FileText, Download, Upload
 } from 'lucide-react';
 
-// --- IMPORTS DO FIREBASE ---
 import { initializeApp } from 'firebase/app';
-import { 
-  getAuth, 
-  onAuthStateChanged, 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword, 
+import {
+  getAuth,
+  onAuthStateChanged,
   signOut,
-  GoogleAuthProvider,
-  signInWithRedirect,
-  getRedirectResult,
   setPersistence,
   browserLocalPersistence,
-  signInWithPopup
 } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc } from 'firebase/firestore';
 
-// --- UTILITÁRIOS NATIVOS E BLINDADOS ---
-const hapticFeedback = (pattern = 40) => {
-  try {
-    if (typeof window !== 'undefined' && window.navigator && typeof window.navigator.vibrate === 'function') {
-      window.navigator.vibrate(pattern);
-    }
-  } catch (e) {}
-};
+import { hapticFeedback, requestNotificationPermission, sendNativeNotification } from './utils/notifications';
+import { parseLocalDate, formatDateLocal, getLocalYYYYMMDD } from './utils/dates';
+import { formatCurrencyInput, parseCurrencyToNumber } from './utils/currency';
+import { useLocalStorage } from './hooks/useLocalStorage';
+import { INITIAL_HABITS_LIST, INITIAL_CATEGORIES, INITIAL_PORTFOLIO_CATEGORIES } from './constants';
+import { SwipeableItem, SwipeHint } from './components/SwipeableItem';
+import { TabErrorBoundary } from './components/TabErrorBoundary';
+import { AuthScreen } from './components/AuthScreen';
 
-const playBeep = () => {
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gainNode = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(880, ctx.currentTime); 
-    gainNode.gain.setValueAtTime(0.1, ctx.currentTime); 
-    osc.connect(gainNode);
-    gainNode.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.3);
-  } catch (e) {}
-};
+const APP_VERSION = 'v4.6';
 
-const requestNotificationPermission = () => {
-  try {
-    if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") {
-      Notification.requestPermission();
-    }
-  } catch (e) {}
-};
-
-const sendNativeNotification = (title, body) => {
-  try {
-    if (!("Notification" in window)) return;
-    if (Notification.permission === "granted") {
-      new Notification(title, { body, icon: '/icon.png' });
-      playBeep();
-      hapticFeedback([100, 50, 100]);
-    }
-  } catch (e) {}
-};
-
-// FORMATAÇÃO SEGURA DE DATAS
-const parseLocalDate = (dateStr) => {
-  try {
-    if (!dateStr || typeof dateStr !== 'string') return new Date(0);
-    if (dateStr.includes('/')) {
-       const parts = dateStr.split('/');
-       if (parts.length === 3) return new Date(parts[2], parts[1] - 1, parts[0]);
-    }
-    const [y, m, d] = dateStr.split('-');
-    if (!y || !m || !d) return new Date(0);
-    return new Date(y, m - 1, d);
-  } catch (e) { return new Date(0); }
-};
-
-const formatDateLocal = (dateStr) => {
-  try {
-    if (!dateStr || typeof dateStr !== 'string') return '';
-    if (dateStr.includes('/')) return dateStr; 
-    const [y, m, d] = dateStr.split('-');
-    if (!y || !m || !d) return dateStr;
-    return `${d}/${m}/${y}`;
-  } catch (e) { return ''; }
-};
-
-// --- CORREÇÃO DO FUSO HORÁRIO (EVITA QUE TAREFAS À NOITE VÃO PARA AMANHÃ) ---
-const getLocalYYYYMMDD = (d) => {
-  if (!d || isNaN(d.getTime())) return '';
-  const tzOffset = d.getTimezoneOffset() * 60000;
-  return new Date(d.getTime() - tzOffset).toISOString().split('T')[0];
-};
-
-// --- MEMÓRIA LOCAL CORRIGIDA E BLINDADA ---
-function useLocalStorage(key, initialValue) {
-  const [storedValue, setStoredValue] = useState(() => {
-    try {
-      const item = window.localStorage.getItem(key);
-      return item ? JSON.parse(item) : initialValue;
-    } catch (error) {
-      return initialValue;
-    }
-  });
-
-  const setValue = (value) => {
-    try {
-      // Esta alteração (prev => ...) impede definitivamente que o relógio de fundo
-      // apague as anotações novas com base numa memória antiga
-      setStoredValue((prevValue) => {
-        const valueToStore = value instanceof Function ? value(prevValue) : value;
-        window.localStorage.setItem(key, JSON.stringify(valueToStore));
-        return valueToStore;
-      });
-    } catch (error) { }
-  };
-
-  return [storedValue, setValue];
-}
-
-const INITIAL_HABITS_LIST = [
-  { id: 'estudo', label: 'Estudo/conhecimento' },
-  { id: 'reserva', label: 'Reserva de emergência' },
-  { id: 'invest', label: 'Investimentos' }
-];
-
-const INITIAL_CATEGORIES = [
-  { id: 'meta', label: 'Meta' },
-  { id: 'pagamento', label: 'Pagamento' },
-  { id: 'estudo', label: 'Estudo' },
-  { id: 'investimento', label: 'Investimento' }
-];
-
-const INITIAL_PORTFOLIO_CATEGORIES = [
-  { id: 'reserva', label: 'Reserva de Emergência' },
-  { id: 'acoes_br', label: 'Ações Nacionais' },
-  { id: 'fii', label: 'Fundos Imobiliários' }
-];
-
-const formatCurrencyInput = (value) => {
-  if (!value) return '';
-  const digits = String(value).replace(/\D/g, '');
-  if (!digits) return '';
-  const numberValue = Number(digits) / 100;
-  return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(numberValue);
-};
-
-const parseCurrencyToNumber = (formattedValue) => {
-  if (!formattedValue) return 0;
-  const digits = String(formattedValue).replace(/\D/g, '');
-  return Number(digits) / 100 || 0;
-};
-
-// --- COMPONENTE DESLIZE SEGURO ---
-const SwipeableItem = ({ onEdit, onDeleteRequest, children, frontClass = "bg-slate-800 border-slate-700", wrapperClass = "mb-3", isDragDisabled = false }) => {
-  const [offset, setOffset] = useState(0);
-  const [isSwiping, setIsSwiping] = useState(false);
-  const startX = useRef(0);
-  const startY = useRef(0);
-  const isDragging = useRef(false);
-
-  const handleStart = (e) => {
-    if (isDragDisabled || !e) return;
-    try {
-      const tagName = typeof e?.target?.tagName === 'string' ? e.target.tagName.toLowerCase() : '';
-      if (['input', 'textarea', 'button', 'select'].includes(tagName)) return;
-    } catch(err) {}
-    
-    const isMouse = typeof e?.type === 'string' && e.type.includes('mouse');
-    const clientX = isMouse ? e.clientX : (e?.touches?.[0]?.clientX || 0);
-    const clientY = isMouse ? e.clientY : (e?.touches?.[0]?.clientY || 0);
-    
-    startX.current = clientX;
-    startY.current = clientY;
-    isDragging.current = true;
-    setIsSwiping(true);
-  };
-
-  const handleMove = (e) => {
-    if (!isDragging.current || isDragDisabled || !e) return;
-    
-    const isMouse = typeof e?.type === 'string' && e.type.includes('mouse');
-    const clientX = isMouse ? e.clientX : (e?.touches?.[0]?.clientX || 0);
-    const clientY = isMouse ? e.clientY : (e?.touches?.[0]?.clientY || 0);
-    
-    const diffX = clientX - startX.current;
-    const diffY = clientY - startY.current;
-
-    if (Math.abs(diffY) > Math.abs(diffX) && Math.abs(diffY) > 10) {
-      isDragging.current = false;
-      setOffset(0);
-      return;
-    }
-    let newOffset = diffX;
-    if (newOffset > 100) newOffset = 100 + (newOffset - 100) * 0.2;
-    if (newOffset < -100) newOffset = -100 + (newOffset + 100) * 0.2;
-    setOffset(newOffset);
-  };
-
-  const handleEnd = () => {
-    if (isDragDisabled || !isDragging.current) return;
-    isDragging.current = false;
-    setIsSwiping(false);
-    if (offset > 70) { hapticFeedback([30, 50]); onEdit(); }
-    else if (offset < -70) { hapticFeedback([30, 50]); onDeleteRequest(); }
-    setOffset(0);
-  };
-
-  return (
-    <div className={`relative w-full rounded-xl bg-slate-900 overflow-hidden shadow-sm ${wrapperClass}`}>
-      <div className="absolute inset-0 flex justify-between items-center px-4 rounded-xl font-medium text-white pointer-events-none">
-        <div className={`flex items-center gap-2 transition-all duration-200 ${offset > 20 ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-4'} text-blue-400`}>
-          <Edit2 className="w-5 h-5" /> <span className="text-sm">Editar</span>
-        </div>
-        <div className={`flex items-center gap-2 transition-all duration-200 ${offset < -20 ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-4'} text-red-500`}>
-          <span className="text-sm">Excluir</span> <Trash2 className="w-5 h-5" />
-        </div>
-      </div>
-      <div
-        onTouchStart={handleStart} onTouchMove={handleMove} onTouchEnd={handleEnd}
-        onMouseDown={handleStart} onMouseMove={handleMove} onMouseUp={handleEnd} onMouseLeave={handleEnd}
-        style={{ transform: `translateX(${offset}px)`, touchAction: isDragDisabled ? 'auto' : 'pan-y' }}
-        className={`relative w-full rounded-xl border transition-transform ${!isSwiping ? 'duration-300 ease-out' : 'duration-0'} ${frontClass}`}
-      >
-        {children}
-      </div>
-    </div>
-  );
-};
-
-const SwipeHint = () => (
-  <div className="flex items-center justify-center gap-2 mb-3 mt-1 text-slate-500 opacity-70 text-[10px] uppercase font-bold tracking-widest">
-    <ChevronRight className="w-3 h-3 animate-pulse" />
-    <span>Deslize para gerir</span>
-    <ChevronLeft className="w-3 h-3 animate-pulse" />
-  </div>
-);
-
-class TabErrorBoundary extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false, errorMsg: '' };
-  }
-  static getDerivedStateFromError(error) { 
-    return { hasError: true, errorMsg: typeof error === 'object' ? (error.message || 'Erro Desconhecido') : String(error) }; 
-  }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="p-6 bg-red-900/20 border border-red-500/50 rounded-2xl text-center mt-10 animate-in fade-in">
-          <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-          <h2 className="text-red-400 font-black text-xl mb-2">Ops! Erro na Aba</h2>
-          <p className="text-sm text-slate-300 mb-4">Ocorreu um erro interno.</p>
-          <div className="p-3 bg-black/50 rounded-lg text-xs text-red-300 font-mono text-left overflow-auto mb-6 max-h-32">
-            {this.state.errorMsg}
-          </div>
-          <button onClick={() => window.location.reload()} className="w-full bg-red-600 hover:bg-red-500 text-white py-3 rounded-xl font-bold">Recarregar Página</button>
-        </div>
-      );
-    }
-    return this.props.children; 
-  }
-}
-
-// --- TELA DE LOGIN / REGISTRO PREMIUM ---
-const AuthScreen = ({ auth }) => {
-  const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    getRedirectResult(auth)
-      .then((result) => {
-        if (result) {
-           console.log("Login com Google bem-sucedido via redirect");
-        }
-      })
-      .catch((err) => {
-        console.error(err);
-        if (err.code === 'auth/operation-not-allowed') {
-          setError('ERRO: O método de login não está ativado no Firebase.');
-        }
-      });
-  }, [auth]);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-    hapticFeedback(30);
-
-    try {
-      if (isLogin) {
-        await signInWithEmailAndPassword(auth, email, password);
-      } else {
-        await createUserWithEmailAndPassword(auth, email, password);
-      }
-    } catch (err) {
-      console.error(err);
-      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
-        setError('Email ou senha incorretos.');
-      } else if (err.code === 'auth/email-already-in-use') {
-        setError('Este email já está registado. Escolha a opção "Faça Login".');
-      } else if (err.code === 'auth/weak-password') {
-        setError('A senha deve ter pelo menos 6 caracteres.');
-      } else if (err.code === 'auth/operation-not-allowed') {
-        setError('O login por Email/Senha não está ativado no seu Firebase.');
-      } else {
-        setError('Ocorreu um erro de autenticação.');
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleGoogleLogin = async () => {
-    setError('');
-    setLoading(true);
-    hapticFeedback(30);
-    try {
-      const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: 'select_account' });
-      await signInWithPopup(auth, provider); 
-    } catch (err) {
-      console.error(err);
-      if (err.code === 'auth/popup-closed-by-user') {
-        setError('O login com Google foi cancelado.');
-      } else if (err.code === 'auth/popup-blocked') {
-        setError('Pop-up bloqueado. O seu telemóvel não permite janelas flutuantes. Por favor, use Email e Senha.');
-      } else {
-        setError('Erro com o Google. O Firebase suporta o domínio atual?');
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="min-h-[100dvh] bg-slate-900 flex flex-col justify-center items-center p-6 font-sans overflow-hidden relative">
-      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-600/20 rounded-full blur-[100px] pointer-events-none"></div>
-      <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-emerald-600/10 rounded-full blur-[100px] pointer-events-none"></div>
-
-      <div className="w-full max-w-md animate-in fade-in slide-in-from-bottom-4 duration-700 relative z-10">
-        
-        <div className="flex flex-col items-center mb-8">
-          <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-blue-700 rounded-[1.5rem] flex items-center justify-center shadow-[0_10px_30px_rgba(59,130,246,0.4)] mb-5 transform rotate-3 transition-transform hover:rotate-0 duration-300">
-            <span className="text-white text-4xl font-black">P</span>
-          </div>
-          <h1 className="text-4xl font-black tracking-tight text-white flex items-center gap-2 drop-shadow-md">
-            Planner<span className="text-blue-500">Full</span>
-          </h1>
-          <p className="text-slate-400 mt-3 text-sm text-center font-medium max-w-[280px]">
-            Organize a sua vida e preserve os seus dados na nuvem oficial.
-          </p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="bg-slate-800/60 backdrop-blur-xl p-6 sm:p-8 rounded-[2rem] border border-slate-700/50 shadow-2xl space-y-5">
-          {error && (
-            <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-4 rounded-2xl text-sm flex items-center gap-3 animate-in shake font-medium shadow-inner">
-              <AlertCircle className="w-5 h-5 shrink-0" />
-              <span className="leading-tight">{error}</span>
-            </div>
-          )}
-
-          <div className="space-y-4">
-            <div>
-              <label className="block text-[11px] font-bold text-slate-400 mb-1.5 uppercase tracking-wider pl-1">Email</label>
-              <div className="relative group">
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 group-focus-within:text-blue-400 transition-colors" />
-                <input 
-                  type="email" 
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-slate-900/80 border border-slate-700 rounded-2xl py-4 pl-12 pr-4 text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all shadow-inner"
-                  placeholder="seu@email.com"
-                />
-              </div>
-            </div>
-            
-            <div>
-              <label className="block text-[11px] font-bold text-slate-400 mb-1.5 uppercase tracking-wider pl-1">Senha</label>
-              <div className="relative group">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 group-focus-within:text-blue-400 transition-colors" />
-                <input 
-                  type="password" 
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-slate-900/80 border border-slate-700 rounded-2xl py-4 pl-12 pr-4 text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all shadow-inner"
-                  placeholder="••••••••"
-                />
-              </div>
-            </div>
-          </div>
-
-          <button 
-            type="submit" 
-            disabled={loading}
-            className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 disabled:opacity-50 text-white py-4 rounded-2xl font-bold shadow-[0_10px_20px_rgba(59,130,246,0.3)] transition-all active:scale-[0.98] mt-4 flex justify-center items-center gap-2 text-base"
-          >
-            {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : (isLogin ? 'Entrar no Planner' : 'Criar Conta')}
-          </button>
-
-          <div className="pt-2 text-center">
-            <p className="text-sm text-slate-400 font-medium">
-              {isLogin ? "Ainda não tem conta? " : "Já tem uma conta? "}
-              <button 
-                type="button" 
-                onClick={() => { setIsLogin(!isLogin); setError(''); }}
-                className="text-blue-400 font-bold hover:text-blue-300 transition-colors"
-                disabled={loading}
-              >
-                {isLogin ? 'Registe-se aqui' : 'Faça Login'}
-              </button>
-            </p>
-          </div>
-
-          <div className="relative my-6">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-slate-700/80"></div>
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-4 bg-slate-800 text-slate-500 font-bold uppercase tracking-widest text-[10px] rounded-full">Ou</span>
-            </div>
-          </div>
-
-          <button 
-            type="button" 
-            onClick={handleGoogleLogin}
-            disabled={loading}
-            className="w-full bg-white hover:bg-slate-100 disabled:bg-slate-300 text-slate-800 py-3.5 rounded-2xl font-bold shadow-md transition-all active:scale-[0.98] flex justify-center items-center gap-3 text-[15px]"
-          >
-            {loading ? <RefreshCw className="w-5 h-5 animate-spin text-blue-500" /> : (
-              <>
-                <svg className="w-5 h-5" viewBox="0 0 24 24">
-                  <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                  <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                  <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                  <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-                </svg>
-                Continuar com o Google
-              </>
-            )}
-          </button>
-        </form>
-
-        <div className="mt-8 flex items-center justify-center gap-2 text-slate-500 opacity-60 text-[10px] uppercase font-bold tracking-widest">
-          <ShieldCheck className="w-4 h-4" />
-          <span>Segurança Firebase Oficial</span>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ==========================================
-// APLICATIVO PRINCIPAL (APP)
-// ==========================================
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -473,6 +36,7 @@ export default function App() {
   // --- CONFIGURAÇÃO DO GOOGLE FIREBASE ---
   const [firebaseUser, setFirebaseUser] = useState(null);
   const [syncStatus, setSyncStatus] = useState('offline');
+  const [syncError, setSyncError] = useState(null);
   
   // --- BLOQUEIO DE SINCRONIZAÇÃO (EVITA APAGAR DADOS) ---
   const [isDataLoaded, setIsDataLoaded] = useState(false); 
@@ -483,24 +47,27 @@ export default function App() {
 
   const [isBalanceVisible, setIsBalanceVisible] = useLocalStorage('planner_v4_balance_visible', true);
   const [stickyNote, setStickyNote] = useLocalStorage('planner_v4_sticky', '');
+  const [localLastUpdated, setLocalLastUpdated] = useLocalStorage('planner_v4_local_last_updated', '');
+  const [importPrompt, setImportPrompt] = useState(null);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
-    const vercelFirebaseConfig = {
-      apiKey: "AIzaSyBIEMS3WhSNKmHsd4XTp-B3gA7vfRDyMwU",
-      authDomain: "planner-full.firebaseapp.com",
-      projectId: "planner-full",
-      storageBucket: "planner-full.firebasestorage.app",
-      messagingSenderId: "904119329848",
-      appId: "1:904119329848:web:8b3e8a0ff8f7e4f419b2cd"
+    const envFirebaseConfig = {
+      apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+      authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+      projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+      storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+      messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+      appId: import.meta.env.VITE_FIREBASE_APP_ID,
     };
 
-    let finalConfig = vercelFirebaseConfig;
+    let finalConfig = envFirebaseConfig;
     if (typeof __firebase_config !== 'undefined') {
       finalConfig = JSON.parse(__firebase_config);
     }
 
-    if (!finalConfig.apiKey && !finalConfig.projectId) {
-      console.warn("Chaves do Firebase não encontradas.");
+    if (!finalConfig.apiKey || !finalConfig.projectId) {
+      console.warn("Chaves do Firebase não encontradas. Verifique o arquivo .env.local");
       setIsInitializing(false);
       return;
     }
@@ -570,34 +137,140 @@ export default function App() {
   const [activeDailyDrag, setActiveDailyDrag] = useState(null);
 
   // --- LÓGICA DE SINCRONIZAÇÃO COM A NUVEM ---
+  const friendlyFirebaseError = (error) => {
+    const code = error?.code || '';
+    if (code === 'unavailable' || code === 'failed-precondition' || /network/i.test(error?.message || '')) {
+      return 'Sem conexão com a nuvem. Suas alterações estão salvas localmente e serão enviadas quando voltar a internet.';
+    }
+    if (code === 'permission-denied') {
+      return 'Permissão negada pelo Firebase. Verifique se você está logado na conta correta.';
+    }
+    if (code === 'unauthenticated') {
+      return 'Sessão expirada. Faça login novamente para sincronizar.';
+    }
+    return 'Não foi possível sincronizar com a nuvem. Suas alterações estão salvas localmente.';
+  };
+
   const loadDataFromCloud = async (user) => {
     if (!dbRef.current || !user) return;
     setSyncStatus('syncing');
+    setSyncError(null);
     try {
       const appId = typeof __app_id !== 'undefined' ? __app_id : 'planner-v3';
       const docPath = doc(dbRef.current, 'artifacts', appId, 'users', user.uid, 'plannerData', 'main_v3');
       const snapshot = await getDoc(docPath);
-      
+
       if (snapshot.exists()) {
         const data = snapshot.data();
-        if (data.tasks) setTasks(data.tasks);
-        if (data.taskCategories) setTaskCategories(data.taskCategories);
-        if (data.habitsList) setHabitsList(data.habitsList);
-        if (data.habits !== undefined) setHabits(data.habits || {});
-        if (data.dailyTasks !== undefined) setDailyTasks(data.dailyTasks || {});
-        if (data.portfolioCategories) setPortfolioCategories(data.portfolioCategories);
-        if (data.portfolio) setPortfolio(data.portfolio);
-        if (data.portfolioUpdateDate) setPortfolioUpdateDate(data.portfolioUpdateDate);
-        if (data.prevPortfolioBalance) setPrevPortfolioBalance(data.prevPortfolioBalance);
-        if (data.stickyNote !== undefined) setStickyNote(data.stickyNote || '');
+        const cloudTime = data.lastUpdated ? new Date(data.lastUpdated).getTime() : 0;
+        const localTime = localLastUpdated ? new Date(localLastUpdated).getTime() : 0;
+
+        // PROTEÇÃO: se a versão local é mais recente que a nuvem, NÃO sobrescreve.
+        // Isso evita perda de dados quando o sync esteve quebrado e voltou.
+        if (localTime > cloudTime && cloudTime > 0) {
+          console.warn(`Versão local (${localLastUpdated}) é mais recente que a nuvem (${data.lastUpdated}). Mantendo local.`);
+          setSyncStatus('online');
+          setSyncError('Sua versão local é mais recente que a nuvem. Os dados locais foram preservados e serão enviados em segundos.');
+        } else {
+          if (data.tasks) setTasks(data.tasks);
+          if (data.taskCategories) setTaskCategories(data.taskCategories);
+          if (data.habitsList) setHabitsList(data.habitsList);
+          if (data.habits !== undefined) setHabits(data.habits || {});
+          if (data.dailyTasks !== undefined) setDailyTasks(data.dailyTasks || {});
+          if (data.portfolioCategories) setPortfolioCategories(data.portfolioCategories);
+          if (data.portfolio) setPortfolio(data.portfolio);
+          if (data.portfolioUpdateDate) setPortfolioUpdateDate(data.portfolioUpdateDate);
+          if (data.prevPortfolioBalance) setPrevPortfolioBalance(data.prevPortfolioBalance);
+          if (data.stickyNote !== undefined) setStickyNote(data.stickyNote || '');
+          if (data.lastUpdated) setLocalLastUpdated(data.lastUpdated);
+          setSyncStatus('online');
+        }
+      } else {
+        setSyncStatus('online');
       }
-      setSyncStatus('online');
     } catch (error) {
       console.error("Erro ao carregar da nuvem:", error);
-      setSyncStatus('offline');
+      setSyncStatus('error');
+      setSyncError(friendlyFirebaseError(error));
     } finally {
       setIsDataLoaded(true);
     }
+  };
+
+  const retrySync = () => {
+    if (firebaseUser) {
+      loadDataFromCloud(firebaseUser);
+    }
+  };
+
+  // --- BACKUP MANUAL ---
+  const handleExportData = () => {
+    try {
+      const payload = {
+        version: 'planner-v3',
+        exportedAt: new Date().toISOString(),
+        data: {
+          tasks, taskCategories, habitsList, habits, dailyTasks,
+          portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance,
+          stickyNote,
+        }
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const dateStr = new Date().toISOString().split('T')[0];
+      link.href = url;
+      link.download = `planner-backup-${dateStr}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      hapticFeedback(50);
+    } catch (e) {
+      console.error('Erro ao exportar:', e);
+      alert('Não foi possível exportar os dados.');
+    }
+  };
+
+  const handleImportFile = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const parsed = JSON.parse(e.target.result);
+        if (!parsed?.data || typeof parsed.data !== 'object') {
+          alert('Arquivo inválido — não parece ser um backup do Planner Full.');
+          return;
+        }
+        setImportPrompt({ data: parsed.data, exportedAt: parsed.exportedAt });
+      } catch (err) {
+        console.error('Erro ao ler arquivo:', err);
+        alert('Não foi possível ler o arquivo. Verifique se é um JSON válido.');
+      } finally {
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const confirmImport = () => {
+    if (!importPrompt?.data) return;
+    const d = importPrompt.data;
+    if (Array.isArray(d.tasks)) setTasks(d.tasks);
+    if (Array.isArray(d.taskCategories)) setTaskCategories(d.taskCategories);
+    if (Array.isArray(d.habitsList)) setHabitsList(d.habitsList);
+    if (d.habits && typeof d.habits === 'object') setHabits(d.habits);
+    if (d.dailyTasks && typeof d.dailyTasks === 'object') setDailyTasks(d.dailyTasks);
+    if (Array.isArray(d.portfolioCategories)) setPortfolioCategories(d.portfolioCategories);
+    if (d.portfolio && typeof d.portfolio === 'object') setPortfolio(d.portfolio);
+    if (typeof d.portfolioUpdateDate === 'string') setPortfolioUpdateDate(d.portfolioUpdateDate);
+    if (typeof d.prevPortfolioBalance === 'string') setPrevPortfolioBalance(d.prevPortfolioBalance);
+    if (typeof d.stickyNote === 'string') setStickyNote(d.stickyNote);
+    setLocalLastUpdated(new Date().toISOString());
+    setImportPrompt(null);
+    setIsSidebarOpen(false);
+    hapticFeedback([40, 30, 60]);
   };
 
   useEffect(() => {
@@ -605,19 +278,24 @@ export default function App() {
 
     const saveDataToCloud = async () => {
       setSyncStatus('syncing');
+      const now = new Date().toISOString();
+      // Marca local imediatamente — se o sync falhar, ainda sabemos que o local é o mais recente
+      setLocalLastUpdated(now);
       try {
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'planner-v3';
         const docPath = doc(dbRef.current, 'artifacts', appId, 'users', firebaseUser.uid, 'plannerData', 'main_v3');
         await setDoc(docPath, {
-          tasks, taskCategories, habitsList, habits, dailyTasks, 
+          tasks, taskCategories, habitsList, habits, dailyTasks,
           portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance,
-          stickyNote, 
-          lastUpdated: new Date().toISOString()
+          stickyNote,
+          lastUpdated: now
         }, { merge: true });
         setSyncStatus('online');
+        setSyncError(null);
       } catch (error) {
         console.error("Erro ao salvar na nuvem:", error);
-        setSyncStatus('offline');
+        setSyncStatus('error');
+        setSyncError(friendlyFirebaseError(error));
       }
     };
 
@@ -1322,6 +1000,18 @@ export default function App() {
   // --- SELETOR DE ECRÃ ---
   if (isInitializing) return <div className="min-h-screen bg-slate-900 flex items-center justify-center"><RefreshCw className="w-8 h-8 text-blue-500 animate-spin" /></div>;
   if (!firebaseUser) return <AuthScreen auth={authRef.current} />;
+  if (!isDataLoaded) return (
+    <div className="min-h-[100dvh] bg-slate-900 flex flex-col items-center justify-center p-6">
+      <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-700 rounded-2xl flex items-center justify-center shadow-[0_10px_30px_rgba(59,130,246,0.4)] mb-6 animate-pulse">
+        <span className="text-white text-3xl font-black">P</span>
+      </div>
+      <div className="flex items-center gap-2 text-slate-300">
+        <RefreshCw className="w-4 h-4 text-blue-400 animate-spin" />
+        <span className="text-sm font-medium">Carregando seus dados…</span>
+      </div>
+      <p className="text-xs text-slate-500 mt-2">Sincronizando com a nuvem</p>
+    </div>
+  );
 
   return (
     <div className="flex justify-center bg-slate-900 font-sans text-slate-200 selection:bg-blue-500/30 h-[100dvh] w-full overflow-hidden">
@@ -1331,12 +1021,28 @@ export default function App() {
           <div className="font-black text-xl text-white flex items-center gap-2">
             <div className="w-7 h-7 bg-gradient-to-br from-blue-500 to-blue-700 rounded-[8px] flex items-center justify-center shadow-lg"><span className="text-white text-sm">P</span></div>
             Planner<span className="text-blue-500">Full</span>
+            <span className="ml-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded">{APP_VERSION}</span>
           </div>
           <button onClick={() => setIsSidebarOpen(true)} className="w-9 h-9 rounded-full bg-slate-800 border-2 border-slate-600 flex items-center justify-center relative active:scale-95">
             <User className="w-5 h-5 text-slate-300" />
-            <span className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-slate-900 ${syncStatus === 'online' ? 'bg-emerald-500' : 'bg-yellow-500'}`}></span>
+            <span className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-slate-900 ${syncStatus === 'online' ? 'bg-emerald-500' : syncStatus === 'error' ? 'bg-red-500' : 'bg-yellow-500'}`}></span>
           </button>
         </div>
+
+        {syncError && (
+          <div className="shrink-0 bg-red-500/10 border-b border-red-500/30 px-4 py-3 flex items-start gap-3 animate-in slide-in-from-top">
+            <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-red-300 leading-snug">{syncError}</p>
+              <div className="flex gap-3 mt-2">
+                <button onClick={retrySync} className="text-xs font-bold text-red-400 hover:text-red-300 flex items-center gap-1">
+                  <RefreshCw className="w-3 h-3" /> Tentar novamente
+                </button>
+                <button onClick={() => setSyncError(null)} className="text-xs text-slate-400 hover:text-slate-300">Dispensar</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <main className="flex-1 overflow-y-auto p-6 scroll-smooth">
           <TabErrorBoundary>
@@ -1373,16 +1079,20 @@ export default function App() {
                 </div>
                 <h2 className="text-lg font-bold text-white truncate">{firebaseUser?.email || "Usuário"}</h2>
                 <div className="flex items-center gap-2 mt-2">
-                  {syncStatus === 'online' ? <><Cloud className="w-4 h-4 text-emerald-400"/><span className="text-xs text-emerald-400 font-medium">Sincronizado</span></> : 
+                  {syncStatus === 'online' ? <><Cloud className="w-4 h-4 text-emerald-400"/><span className="text-xs text-emerald-400 font-medium">Sincronizado</span></> :
                    syncStatus === 'syncing' ? <><RefreshCw className="w-4 h-4 text-yellow-400 animate-spin"/><span className="text-xs text-yellow-400 font-medium">A sincronizar...</span></> :
+                   syncStatus === 'error' ? <><AlertCircle className="w-4 h-4 text-red-400"/><button onClick={retrySync} className="text-xs text-red-400 font-medium hover:text-red-300 underline">Erro — Tentar novamente</button></> :
                    <><CloudOff className="w-4 h-4 text-slate-500"/><span className="text-xs text-slate-500 font-medium">Offline</span></>}
                 </div>
               </div>
               <div className="flex-1 p-4 space-y-4">
                 <button onClick={requestNotificationPermission} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-slate-300"><BellRing className="w-5 h-5 text-slate-400" /> <span className="font-medium">Ativar Notificações</span></button>
+                <button onClick={handleExportData} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-slate-300"><Download className="w-5 h-5 text-slate-400" /> <span className="font-medium">Exportar Backup (JSON)</span></button>
+                <button onClick={() => fileInputRef.current?.click()} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-slate-300"><Upload className="w-5 h-5 text-slate-400" /> <span className="font-medium">Importar Backup (JSON)</span></button>
+                <input ref={fileInputRef} type="file" accept="application/json,.json" onChange={handleImportFile} className="hidden" />
                 <button onClick={handleLogout} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-red-500/10 text-red-400 mt-4"><LogOut className="w-5 h-5 text-red-400" /> <span className="font-medium">Terminar Sessão</span></button>
               </div>
-              <div className="p-4 border-t border-slate-800"><p className="text-center text-[10px] text-slate-500 uppercase tracking-widest">Planner Full v4.5 Oficial</p></div>
+              <div className="p-4 border-t border-slate-800"><p className="text-center text-[10px] text-slate-500 uppercase tracking-widest">Planner Full {APP_VERSION} · Backup + Anti-perda</p></div>
             </div>
           </div>
         )}
@@ -1396,6 +1106,23 @@ export default function App() {
               <div className="flex gap-3">
                 <button onClick={() => setDeletePrompt(null)} className="flex-1 py-3 rounded-xl bg-slate-700 text-white font-medium">Cancelar</button>
                 <button onClick={confirmDelete} className="flex-1 py-3 rounded-xl bg-red-600 text-white font-medium">Excluir</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {importPrompt && (
+          <div className="absolute inset-0 z-[110] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in">
+            <div className="bg-slate-800 rounded-3xl p-6 w-full max-w-[340px] border border-yellow-500/40 shadow-2xl">
+              <div className="w-12 h-12 rounded-full bg-yellow-500/10 flex items-center justify-center mb-4 mx-auto"><Upload className="w-6 h-6 text-yellow-400" /></div>
+              <h3 className="text-xl font-bold text-white text-center mb-2">Importar Backup</h3>
+              <p className="text-slate-400 text-center text-sm mb-2">Isto vai <span className="text-yellow-400 font-bold">substituir todos os seus dados atuais</span> pelos do arquivo.</p>
+              {importPrompt.exportedAt && (
+                <p className="text-xs text-slate-500 text-center mb-6">Backup de {new Date(importPrompt.exportedAt).toLocaleString('pt-BR')}</p>
+              )}
+              <div className="flex gap-3">
+                <button onClick={() => setImportPrompt(null)} className="flex-1 py-3 rounded-xl bg-slate-700 text-white font-medium">Cancelar</button>
+                <button onClick={confirmImport} className="flex-1 py-3 rounded-xl bg-yellow-600 text-white font-medium">Importar</button>
               </div>
             </div>
           </div>

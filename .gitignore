@@ -1,0 +1,14 @@
+node_modules
+dist
+dist-ssr
+.DS_Store
+
+# Local env files (contain secrets)
+.env
+.env.local
+.env.*.local
+
+# Editor
+.vscode
+.idea
+*.swp
