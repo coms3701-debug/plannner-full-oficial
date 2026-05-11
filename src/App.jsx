@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   Home, CheckSquare, Activity, Briefcase, CalendarClock, Plus, Check, ChevronLeft, ChevronRight,
   Trash2, Edit2, X, User, Settings, BellRing, AlertCircle, Clock, GripVertical,
@@ -25,7 +25,7 @@ import { SwipeableItem, SwipeHint } from './components/SwipeableItem';
 import { TabErrorBoundary } from './components/TabErrorBoundary';
 import { AuthScreen } from './components/AuthScreen';
 
-const APP_VERSION = 'v4.6';
+const APP_VERSION = 'v4.7';
 
 
 export default function App() {
@@ -273,39 +273,68 @@ export default function App() {
     hapticFeedback([40, 30, 60]);
   };
 
+  const saveDataToCloud = useCallback(async () => {
+    if (!firebaseUser || !dbRef.current || !isDataLoaded) return false;
+    setSyncStatus('syncing');
+    const now = new Date().toISOString();
+    // Marca local imediatamente — se o sync falhar, ainda sabemos que o local é o mais recente
+    setLocalLastUpdated(now);
+    try {
+      const appId = typeof __app_id !== 'undefined' ? __app_id : 'planner-v3';
+      const docPath = doc(dbRef.current, 'artifacts', appId, 'users', firebaseUser.uid, 'plannerData', 'main_v3');
+      await setDoc(docPath, {
+        tasks, taskCategories, habitsList, habits, dailyTasks,
+        portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance,
+        stickyNote,
+        lastUpdated: now
+      }, { merge: true });
+      setSyncStatus('online');
+      setSyncError(null);
+      return true;
+    } catch (error) {
+      console.error("Erro ao salvar na nuvem:", error);
+      setSyncStatus('error');
+      setSyncError(friendlyFirebaseError(error));
+      return false;
+    }
+  }, [tasks, taskCategories, habitsList, habits, dailyTasks, portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance, stickyNote, firebaseUser, isDataLoaded]);
+
+  // Save com debounce (durante uso normal)
   useEffect(() => {
     if (!firebaseUser || !dbRef.current || !isDataLoaded) return;
-
-    const saveDataToCloud = async () => {
-      setSyncStatus('syncing');
-      const now = new Date().toISOString();
-      // Marca local imediatamente — se o sync falhar, ainda sabemos que o local é o mais recente
-      setLocalLastUpdated(now);
-      try {
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'planner-v3';
-        const docPath = doc(dbRef.current, 'artifacts', appId, 'users', firebaseUser.uid, 'plannerData', 'main_v3');
-        await setDoc(docPath, {
-          tasks, taskCategories, habitsList, habits, dailyTasks,
-          portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance,
-          stickyNote,
-          lastUpdated: now
-        }, { merge: true });
-        setSyncStatus('online');
-        setSyncError(null);
-      } catch (error) {
-        console.error("Erro ao salvar na nuvem:", error);
-        setSyncStatus('error');
-        setSyncError(friendlyFirebaseError(error));
-      }
-    };
-
     clearTimeout(syncTimeoutRef.current);
     syncTimeoutRef.current = setTimeout(() => { saveDataToCloud(); }, 2000);
     return () => clearTimeout(syncTimeoutRef.current);
-  }, [tasks, taskCategories, habitsList, habits, dailyTasks, portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance, stickyNote, firebaseUser, isDataLoaded]);
+  }, [saveDataToCloud, firebaseUser, isDataLoaded]);
+
+  // PROTEÇÃO: Salva imediatamente quando o app sai de foco (fechar, hibernar, trocar de aba)
+  // Sem isso, escritas dentro da janela de debounce de 2s eram perdidas se o iOS matasse a PWA.
+  useEffect(() => {
+    if (!firebaseUser || !isDataLoaded) return;
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        clearTimeout(syncTimeoutRef.current);
+        saveDataToCloud();
+      }
+    };
+    const onPageHide = () => {
+      clearTimeout(syncTimeoutRef.current);
+      saveDataToCloud();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('pagehide', onPageHide);
+    };
+  }, [saveDataToCloud, firebaseUser, isDataLoaded]);
 
   const handleLogout = async () => {
     if (authRef.current) {
+      // CRÍTICO: força save final ANTES de sair, senão escritas recentes podem ser perdidas
+      clearTimeout(syncTimeoutRef.current);
+      try { await saveDataToCloud(); } catch (e) { /* não bloqueia logout se save falhar */ }
+
       await signOut(authRef.current);
       setIsSidebarOpen(false);
       setTasks([]);
@@ -313,7 +342,7 @@ export default function App() {
       setDailyTasks({});
       setPortfolio({});
       setStickyNote('');
-      setIsDataLoaded(false); 
+      setIsDataLoaded(false);
     }
   };
 
@@ -1084,6 +1113,17 @@ export default function App() {
                    syncStatus === 'error' ? <><AlertCircle className="w-4 h-4 text-red-400"/><button onClick={retrySync} className="text-xs text-red-400 font-medium hover:text-red-300 underline">Erro — Tentar novamente</button></> :
                    <><CloudOff className="w-4 h-4 text-slate-500"/><span className="text-xs text-slate-500 font-medium">Offline</span></>}
                 </div>
+                {localLastUpdated && (
+                  <p className="text-[10px] text-slate-500 mt-1.5">
+                    Última sincronização: {new Date(localLastUpdated).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                )}
+                <button
+                  onClick={async () => { clearTimeout(syncTimeoutRef.current); await saveDataToCloud(); }}
+                  className="mt-3 w-full text-xs bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 font-bold py-2 rounded-lg border border-blue-500/30 flex items-center justify-center gap-2"
+                >
+                  <RefreshCw className="w-3 h-3" /> Salvar Agora
+                </button>
               </div>
               <div className="flex-1 p-4 space-y-4">
                 <button onClick={requestNotificationPermission} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-slate-300"><BellRing className="w-5 h-5 text-slate-400" /> <span className="font-medium">Ativar Notificações</span></button>
@@ -1092,7 +1132,7 @@ export default function App() {
                 <input ref={fileInputRef} type="file" accept="application/json,.json" onChange={handleImportFile} className="hidden" />
                 <button onClick={handleLogout} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-red-500/10 text-red-400 mt-4"><LogOut className="w-5 h-5 text-red-400" /> <span className="font-medium">Terminar Sessão</span></button>
               </div>
-              <div className="p-4 border-t border-slate-800"><p className="text-center text-[10px] text-slate-500 uppercase tracking-widest">Planner Full {APP_VERSION} · Backup + Anti-perda</p></div>
+              <div className="p-4 border-t border-slate-800"><p className="text-center text-[10px] text-slate-500 uppercase tracking-widest">Planner Full {APP_VERSION} · Save Robusto</p></div>
             </div>
           </div>
         )}
