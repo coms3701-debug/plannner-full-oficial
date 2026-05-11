@@ -1118,12 +1118,6 @@ export default function App() {
                     Última sincronização: {new Date(localLastUpdated).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                   </p>
                 )}
-                <button
-                  onClick={async () => { clearTimeout(syncTimeoutRef.current); await saveDataToCloud(); }}
-                  className="mt-3 w-full text-xs bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 font-bold py-2 rounded-lg border border-blue-500/30 flex items-center justify-center gap-2"
-                >
-                  <RefreshCw className="w-3 h-3" /> Salvar Agora
-                </button>
               </div>
               <div className="flex-1 p-4 space-y-4">
                 <button onClick={requestNotificationPermission} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-slate-300"><BellRing className="w-5 h-5 text-slate-400" /> <span className="font-medium">Ativar Notificações</span></button>
