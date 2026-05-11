@@ -3,7 +3,7 @@ import {
   Home, CheckSquare, Activity, Briefcase, CalendarClock, Plus, Check, ChevronLeft, ChevronRight,
   Trash2, Edit2, X, User, Settings, BellRing, AlertCircle, Clock, GripVertical,
   Cloud, CloudOff, RefreshCw, LogOut, ListTodo, CheckCircle2,
-  Eye, EyeOff, FileText, Download, Upload, RotateCcw
+  Eye, EyeOff, FileText, Download, Upload
 } from 'lucide-react';
 
 import { initializeApp } from 'firebase/app';
@@ -25,7 +25,7 @@ import { SwipeableItem, SwipeHint } from './components/SwipeableItem';
 import { TabErrorBoundary } from './components/TabErrorBoundary';
 import { AuthScreen } from './components/AuthScreen';
 
-const APP_VERSION = 'v4.8';
+const APP_VERSION = 'v4.9';
 
 
 export default function App() {
@@ -49,7 +49,6 @@ export default function App() {
   const [stickyNote, setStickyNote] = useLocalStorage('planner_v4_sticky', '');
   const [localLastUpdated, setLocalLastUpdated] = useLocalStorage('planner_v4_local_last_updated', '');
   const [importPrompt, setImportPrompt] = useState(null);
-  const [resetPrompt, setResetPrompt] = useState(false);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -244,50 +243,6 @@ export default function App() {
       }
     };
     reader.readAsText(file);
-  };
-
-  const handleResetEverything = async () => {
-    try {
-      // 1. Para qualquer save pendente
-      clearTimeout(syncTimeoutRef.current);
-      setIsDataLoaded(false);
-
-      // 2. Limpa documento na nuvem
-      if (dbRef.current && firebaseUser) {
-        try {
-          const appId = typeof __app_id !== 'undefined' ? __app_id : 'planner-v3';
-          const docPath = doc(dbRef.current, 'artifacts', appId, 'users', firebaseUser.uid, 'plannerData', 'main_v3');
-          await setDoc(docPath, {
-            tasks: [],
-            taskCategories: INITIAL_CATEGORIES,
-            habitsList: INITIAL_HABITS_LIST,
-            habits: {},
-            dailyTasks: {},
-            portfolioCategories: INITIAL_PORTFOLIO_CATEGORIES,
-            portfolio: {},
-            portfolioUpdateDate: getLocalYYYYMMDD(new Date()),
-            prevPortfolioBalance: '',
-            stickyNote: '',
-            lastUpdated: new Date().toISOString()
-          });
-        } catch (e) {
-          console.error('Erro ao limpar nuvem:', e);
-        }
-      }
-
-      // 3. Limpa TODO localStorage relacionado ao app
-      Object.keys(localStorage).forEach(key => {
-        if (key.startsWith('planner_')) {
-          localStorage.removeItem(key);
-        }
-      });
-
-      // 4. Recarrega — vai inicializar tudo limpo
-      window.location.reload();
-    } catch (e) {
-      console.error('Erro no reset:', e);
-      alert('Erro ao resetar. Tente fechar e abrir o app de novo.');
-    }
   };
 
   const confirmImport = () => {
@@ -1160,10 +1115,9 @@ export default function App() {
                 <button onClick={handleExportData} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-slate-300"><Download className="w-5 h-5 text-slate-400" /> <span className="font-medium">Exportar Backup (JSON)</span></button>
                 <button onClick={() => fileInputRef.current?.click()} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-slate-300"><Upload className="w-5 h-5 text-slate-400" /> <span className="font-medium">Importar Backup (JSON)</span></button>
                 <input ref={fileInputRef} type="file" accept="application/json,.json" onChange={handleImportFile} className="hidden" />
-                <button onClick={() => setResetPrompt(true)} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-orange-500/10 text-orange-400 mt-4 border border-orange-500/20"><RotateCcw className="w-5 h-5 text-orange-400" /> <span className="font-medium">Apagar Tudo e Recomeçar</span></button>
                 <button onClick={handleLogout} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-red-500/10 text-red-400 mt-4"><LogOut className="w-5 h-5 text-red-400" /> <span className="font-medium">Terminar Sessão</span></button>
               </div>
-              <div className="p-4 border-t border-slate-800"><p className="text-center text-[10px] text-slate-500 uppercase tracking-widest">Planner Full {APP_VERSION} · Reset + Nuvem Autoritativa</p></div>
+              <div className="p-4 border-t border-slate-800"><p className="text-center text-[10px] text-slate-500 uppercase tracking-widest">Planner Full {APP_VERSION} · Nuvem Autoritativa</p></div>
             </div>
           </div>
         )}
@@ -1177,28 +1131,6 @@ export default function App() {
               <div className="flex gap-3">
                 <button onClick={() => setDeletePrompt(null)} className="flex-1 py-3 rounded-xl bg-slate-700 text-white font-medium">Cancelar</button>
                 <button onClick={confirmDelete} className="flex-1 py-3 rounded-xl bg-red-600 text-white font-medium">Excluir</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {resetPrompt && (
-          <div className="absolute inset-0 z-[120] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-            <div className="bg-slate-800 rounded-3xl p-6 w-full max-w-[340px] border-2 border-orange-500/50 shadow-2xl">
-              <div className="w-12 h-12 rounded-full bg-orange-500/10 flex items-center justify-center mb-4 mx-auto"><RotateCcw className="w-6 h-6 text-orange-400" /></div>
-              <h3 className="text-xl font-bold text-white text-center mb-2">Apagar Tudo?</h3>
-              <p className="text-slate-300 text-center text-sm mb-2">Isto vai apagar <span className="text-orange-400 font-bold">TODOS</span> os dados:</p>
-              <ul className="text-xs text-slate-400 mb-4 space-y-1 pl-4">
-                <li>• Tarefas e agenda</li>
-                <li>• Hábitos e foco do dia</li>
-                <li>• Portfólio e valores</li>
-                <li>• Categorias personalizadas</li>
-                <li>• Bloco de notas</li>
-              </ul>
-              <p className="text-xs text-red-400 text-center mb-6 font-bold">Esta ação não pode ser desfeita.</p>
-              <div className="flex gap-3">
-                <button onClick={() => setResetPrompt(false)} className="flex-1 py-3 rounded-xl bg-slate-700 text-white font-medium">Cancelar</button>
-                <button onClick={handleResetEverything} className="flex-1 py-3 rounded-xl bg-orange-600 text-white font-medium">Apagar Tudo</button>
               </div>
             </div>
           </div>
