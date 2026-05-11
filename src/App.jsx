@@ -3,7 +3,7 @@ import {
   Home, CheckSquare, Activity, Briefcase, CalendarClock, Plus, Check, ChevronLeft, ChevronRight,
   Trash2, Edit2, X, User, Settings, BellRing, AlertCircle, Clock, GripVertical,
   Cloud, CloudOff, RefreshCw, LogOut, ListTodo, CheckCircle2,
-  Eye, EyeOff, FileText, Download, Upload
+  Eye, EyeOff, FileText, Download, Upload, CalendarPlus
 } from 'lucide-react';
 
 import { initializeApp } from 'firebase/app';
@@ -24,8 +24,9 @@ import { INITIAL_HABITS_LIST, INITIAL_CATEGORIES, INITIAL_PORTFOLIO_CATEGORIES }
 import { SwipeableItem, SwipeHint } from './components/SwipeableItem';
 import { TabErrorBoundary } from './components/TabErrorBoundary';
 import { AuthScreen } from './components/AuthScreen';
+import { downloadTaskICS } from './utils/ics';
 
-const APP_VERSION = 'v4.9';
+const APP_VERSION = 'v5.0';
 
 
 export default function App() {
@@ -856,6 +857,16 @@ export default function App() {
                 {task.description && <p className={`text-[11px] mt-1 line-clamp-2 leading-tight ${task.completed ? 'text-slate-600' : 'text-slate-400'}`}>{task.description}</p>}
                 <p className="text-xs flex items-center gap-2 mt-1 opacity-80"><span className="capitalize">{categoryObj?.label || 'Geral'}</span><span>•</span><span>{formatDateLocal(task.dueDate)} {task.dueTime}</span></p>
               </div>
+              {task.dueDate && !task.completed && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); downloadTaskICS(task); hapticFeedback(30); }}
+                  className="shrink-0 w-8 h-8 rounded-lg bg-blue-600/15 hover:bg-blue-600/30 border border-blue-500/30 flex items-center justify-center active:scale-90 transition"
+                  title="Adicionar ao Calendário do iPhone"
+                  aria-label="Adicionar ao Calendário"
+                >
+                  <CalendarPlus className="w-4 h-4 text-blue-400" />
+                </button>
+              )}
             </SwipeableItem>
           );
         })}
@@ -1117,7 +1128,7 @@ export default function App() {
                 <input ref={fileInputRef} type="file" accept="application/json,.json" onChange={handleImportFile} className="hidden" />
                 <button onClick={handleLogout} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-red-500/10 text-red-400 mt-4"><LogOut className="w-5 h-5 text-red-400" /> <span className="font-medium">Terminar Sessão</span></button>
               </div>
-              <div className="p-4 border-t border-slate-800"><p className="text-center text-[10px] text-slate-500 uppercase tracking-widest">Planner Full {APP_VERSION} · Nuvem Autoritativa</p></div>
+              <div className="p-4 border-t border-slate-800"><p className="text-center text-[10px] text-slate-500 uppercase tracking-widest">Planner Full {APP_VERSION} · Calendário do iPhone</p></div>
             </div>
           </div>
         )}
