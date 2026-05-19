@@ -84,7 +84,7 @@ export const AuthScreen = ({ auth }) => {
   };
 
   return (
-    <div className="min-h-[100dvh] bg-slate-900 flex flex-col justify-center items-center p-6 font-sans overflow-hidden relative">
+    <div className="min-h-[100dvh] bg-white dark:bg-slate-900 flex flex-col justify-center items-center p-6 font-sans overflow-hidden relative">
       <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-600/20 rounded-full blur-[100px] pointer-events-none"></div>
       <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-emerald-600/10 rounded-full blur-[100px] pointer-events-none"></div>
 
@@ -92,17 +92,17 @@ export const AuthScreen = ({ auth }) => {
 
         <div className="flex flex-col items-center mb-8">
           <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-blue-700 rounded-[1.5rem] flex items-center justify-center shadow-[0_10px_30px_rgba(59,130,246,0.4)] mb-5 transform rotate-3 transition-transform hover:rotate-0 duration-300">
-            <span className="text-white text-4xl font-black">P</span>
+            <span className="text-slate-900 dark:text-white text-4xl font-black">P</span>
           </div>
-          <h1 className="text-4xl font-black tracking-tight text-white flex items-center gap-2 drop-shadow-md">
+          <h1 className="text-4xl font-black tracking-tight text-slate-900 dark:text-white flex items-center gap-2 drop-shadow-md">
             Planner<span className="text-blue-500">Full</span>
           </h1>
-          <p className="text-slate-400 mt-3 text-sm text-center font-medium max-w-[280px]">
+          <p className="text-slate-500 dark:text-slate-400 mt-3 text-sm text-center font-medium max-w-[280px]">
             Organize a sua vida e preserve os seus dados na nuvem oficial.
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-slate-800/60 backdrop-blur-xl p-6 sm:p-8 rounded-[2rem] border border-slate-700/50 shadow-2xl space-y-5">
+        <form onSubmit={handleSubmit} className="bg-slate-100/60 dark:bg-slate-800/60 backdrop-blur-xl p-6 sm:p-8 rounded-[2rem] border border-slate-700/50 shadow-2xl space-y-5">
           {error && (
             <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-4 rounded-2xl text-sm flex items-center gap-3 animate-in shake font-medium shadow-inner">
               <AlertCircle className="w-5 h-5 shrink-0" />
@@ -112,7 +112,7 @@ export const AuthScreen = ({ auth }) => {
 
           <div className="space-y-4">
             <div>
-              <label className="block text-[11px] font-bold text-slate-400 mb-1.5 uppercase tracking-wider pl-1">Email</label>
+              <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wider pl-1">Email</label>
               <div className="relative group">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 group-focus-within:text-blue-400 transition-colors" />
                 <input
@@ -120,14 +120,14 @@ export const AuthScreen = ({ auth }) => {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-slate-900/80 border border-slate-700 rounded-2xl py-4 pl-12 pr-4 text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all shadow-inner"
+                  className="w-full bg-white/80 dark:bg-slate-900/80 border border-slate-300 dark:border-slate-700 rounded-2xl py-4 pl-12 pr-4 text-slate-900 dark:text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all shadow-inner"
                   placeholder="seu@email.com"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold text-slate-400 mb-1.5 uppercase tracking-wider pl-1">Senha</label>
+              <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wider pl-1">Senha</label>
               <div className="relative group">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 group-focus-within:text-blue-400 transition-colors" />
                 <input
@@ -135,7 +135,7 @@ export const AuthScreen = ({ auth }) => {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-slate-900/80 border border-slate-700 rounded-2xl py-4 pl-12 pr-4 text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all shadow-inner"
+                  className="w-full bg-white/80 dark:bg-slate-900/80 border border-slate-300 dark:border-slate-700 rounded-2xl py-4 pl-12 pr-4 text-slate-900 dark:text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all shadow-inner"
                   placeholder="••••••••"
                 />
               </div>
@@ -145,13 +145,13 @@ export const AuthScreen = ({ auth }) => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 disabled:opacity-50 text-white py-4 rounded-2xl font-bold shadow-[0_10px_20px_rgba(59,130,246,0.3)] transition-all active:scale-[0.98] mt-4 flex justify-center items-center gap-2 text-base"
+            className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 disabled:opacity-50 text-slate-900 dark:text-white py-4 rounded-2xl font-bold shadow-[0_10px_20px_rgba(59,130,246,0.3)] transition-all active:scale-[0.98] mt-4 flex justify-center items-center gap-2 text-base"
           >
             {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : (isLogin ? 'Entrar no Planner' : 'Criar Conta')}
           </button>
 
           <div className="pt-2 text-center">
-            <p className="text-sm text-slate-400 font-medium">
+            <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">
               {isLogin ? "Ainda não tem conta? " : "Já tem uma conta? "}
               <button
                 type="button"
@@ -169,7 +169,7 @@ export const AuthScreen = ({ auth }) => {
               <div className="w-full border-t border-slate-700/80"></div>
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="px-4 bg-slate-800 text-slate-500 font-bold uppercase tracking-widest text-[10px] rounded-full">Ou</span>
+              <span className="px-4 bg-slate-100 dark:bg-slate-800 text-slate-500 font-bold uppercase tracking-widest text-[10px] rounded-full">Ou</span>
             </div>
           </div>
 

@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { hapticFeedback } from '../utils/notifications';
 
-export const SwipeableItem = ({ onEdit, onDeleteRequest, children, frontClass = "bg-slate-800 border-slate-700", wrapperClass = "mb-3", isDragDisabled = false }) => {
+export const SwipeableItem = ({ onEdit, onDeleteRequest, children, frontClass = "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700", wrapperClass = "mb-3", isDragDisabled = false }) => {
   const [offset, setOffset] = useState(0);
   const [isSwiping, setIsSwiping] = useState(false);
   const startX = useRef(0);
@@ -57,8 +57,8 @@ export const SwipeableItem = ({ onEdit, onDeleteRequest, children, frontClass = 
   };
 
   return (
-    <div className={`relative w-full rounded-xl bg-slate-900 overflow-hidden shadow-sm ${wrapperClass}`}>
-      <div className="absolute inset-0 flex justify-between items-center px-4 rounded-xl font-medium text-white pointer-events-none">
+    <div className={`relative w-full rounded-xl bg-white dark:bg-slate-900 overflow-hidden shadow-sm ${wrapperClass}`}>
+      <div className="absolute inset-0 flex justify-between items-center px-4 rounded-xl font-medium text-slate-900 dark:text-white pointer-events-none">
         <div className={`flex items-center gap-2 transition-all duration-200 ${offset > 20 ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-4'} text-blue-400`}>
           <Edit2 className="w-5 h-5" /> <span className="text-sm">Editar</span>
         </div>

@@ -181,54 +181,54 @@ export function CalculadoraTab() {
       <header className="flex justify-between items-start mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-100">Cálculo</h1>
-          <p className="text-slate-400">Calculadora de financiamento (PRICE).</p>
+          <p className="text-slate-500 dark:text-slate-400">Calculadora de financiamento (PRICE).</p>
         </div>
         <div className="w-9 h-9 rounded-full bg-blue-600/20 border border-blue-500/50 flex items-center justify-center">
           <Calculator className="w-5 h-5 text-blue-400" />
         </div>
       </header>
 
-      <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 text-xs text-slate-400 leading-relaxed">
+      <div className="bg-slate-100 dark:bg-slate-800 p-4 rounded-xl border border-slate-300 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
         Preencha 3 campos e deixe vazio o que deseja calcular. Toque em <span className="text-blue-400 font-bold">Calcular</span>.
       </div>
 
       <div className="grid grid-cols-1 gap-4">
-        <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
-          <label className="text-[11px] font-bold text-slate-400 uppercase mb-2 block">Valor financiado</label>
+        <div className="bg-slate-100 dark:bg-slate-800 p-4 rounded-xl border border-slate-300 dark:border-slate-700">
+          <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 block">Valor financiado</label>
           <div className="relative">
             <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 font-medium text-[13px]">R$</span>
-            <input type="text" inputMode="numeric" placeholder="0,00" value={valorFinanciado} onChange={aoEditar((v) => setValorFinanciado(formatCurrencyInput(v.replace(/[^\d]/g, ''))), 'valorFinanciado')} className="w-full bg-slate-900 border border-slate-700 rounded-lg py-2.5 pl-7 pr-2 text-white font-mono text-[14px]" />
+            <input type="text" inputMode="numeric" placeholder="0,00" value={valorFinanciado} onChange={aoEditar((v) => setValorFinanciado(formatCurrencyInput(v.replace(/[^\d]/g, ''))), 'valorFinanciado')} className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg py-2.5 pl-7 pr-2 text-slate-900 dark:text-white font-mono text-[14px]" />
           </div>
         </div>
 
-        <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
-          <label className="text-[11px] font-bold text-slate-400 uppercase mb-2 block">Índice mensal</label>
+        <div className="bg-slate-100 dark:bg-slate-800 p-4 rounded-xl border border-slate-300 dark:border-slate-700">
+          <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 block">Índice mensal</label>
           <div className="relative">
-            <input type="text" inputMode="decimal" placeholder="1,10" value={indice} onChange={(e) => { if (ultimoCalculado === 'indice') setUltimoCalculado(null); setIndice(formatarIndiceInput(e.target.value)); }} className="w-full bg-slate-900 border border-slate-700 rounded-lg py-2.5 pl-2 pr-7 text-white font-mono text-[14px]" />
+            <input type="text" inputMode="decimal" placeholder="1,10" value={indice} onChange={(e) => { if (ultimoCalculado === 'indice') setUltimoCalculado(null); setIndice(formatarIndiceInput(e.target.value)); }} className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg py-2.5 pl-2 pr-7 text-slate-900 dark:text-white font-mono text-[14px]" />
             <span className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 font-medium text-[13px]">%</span>
           </div>
         </div>
 
-        <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
-          <label className="text-[11px] font-bold text-slate-400 uppercase mb-2 block">Número de parcelas</label>
-          <input type="text" inputMode="numeric" placeholder="30" value={parcelas} onChange={(e) => { if (ultimoCalculado === 'parcelas') setUltimoCalculado(null); setParcelas(e.target.value.replace(/[^\d,]/g, '')); }} className="w-full bg-slate-900 border border-slate-700 rounded-lg py-2.5 px-2 text-white font-mono text-[14px]" />
+        <div className="bg-slate-100 dark:bg-slate-800 p-4 rounded-xl border border-slate-300 dark:border-slate-700">
+          <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 block">Número de parcelas</label>
+          <input type="text" inputMode="numeric" placeholder="30" value={parcelas} onChange={(e) => { if (ultimoCalculado === 'parcelas') setUltimoCalculado(null); setParcelas(e.target.value.replace(/[^\d,]/g, '')); }} className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg py-2.5 px-2 text-slate-900 dark:text-white font-mono text-[14px]" />
         </div>
 
-        <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
-          <label className="text-[11px] font-bold text-slate-400 uppercase mb-2 block">Valor da parcela</label>
+        <div className="bg-slate-100 dark:bg-slate-800 p-4 rounded-xl border border-slate-300 dark:border-slate-700">
+          <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 block">Valor da parcela</label>
           <div className="relative">
             <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 font-medium text-[13px]">R$</span>
-            <input type="text" inputMode="numeric" placeholder="0,00" value={valorParcela} onChange={aoEditar((v) => setValorParcela(formatCurrencyInput(v.replace(/[^\d]/g, ''))), 'valorParcela')} className="w-full bg-slate-900 border border-slate-700 rounded-lg py-2.5 pl-7 pr-2 text-white font-mono text-[14px]" />
+            <input type="text" inputMode="numeric" placeholder="0,00" value={valorParcela} onChange={aoEditar((v) => setValorParcela(formatCurrencyInput(v.replace(/[^\d]/g, ''))), 'valorParcela')} className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg py-2.5 pl-7 pr-2 text-slate-900 dark:text-white font-mono text-[14px]" />
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <button onClick={calcular} className="bg-blue-600 active:bg-blue-700 active:scale-95 transition-all text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20">
+        <button onClick={calcular} className="bg-blue-600 active:bg-blue-700 active:scale-95 transition-all text-slate-900 dark:text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20">
           <Calculator className="w-4 h-4" />
           Calcular
         </button>
-        <button onClick={limpar} className="bg-slate-800 active:bg-slate-700 active:scale-95 transition-all text-slate-300 font-bold py-3 rounded-xl border border-slate-700 flex items-center justify-center gap-2">
+        <button onClick={limpar} className="bg-slate-100 dark:bg-slate-800 active:bg-slate-700 active:scale-95 transition-all text-slate-700 dark:text-slate-300 font-bold py-3 rounded-xl border border-slate-300 dark:border-slate-700 flex items-center justify-center gap-2">
           <RotateCcw className="w-4 h-4" />
           Limpar
         </button>
@@ -238,15 +238,15 @@ export function CalculadoraTab() {
         <div className="bg-blue-600/10 border border-blue-500/30 p-5 rounded-2xl space-y-3 animate-in fade-in">
           <p className="text-blue-400 font-bold text-center">{resultado.titulo}</p>
           <div className="grid grid-cols-3 gap-2">
-            <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-700/50 text-center">
-              <p className="text-slate-400 text-[9px] font-bold uppercase mb-1">Parcela</p>
-              <p className="text-white text-[13px] font-mono font-bold">R$ {formatMoeda(resultado.parcela)}</p>
+            <div className="bg-white/50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-700/50 text-center">
+              <p className="text-slate-500 dark:text-slate-400 text-[9px] font-bold uppercase mb-1">Parcela</p>
+              <p className="text-slate-900 dark:text-white text-[13px] font-mono font-bold">R$ {formatMoeda(resultado.parcela)}</p>
             </div>
-            <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-700/50 text-center">
-              <p className="text-slate-400 text-[9px] font-bold uppercase mb-1">Total</p>
-              <p className="text-white text-[13px] font-mono font-bold">R$ {formatMoeda(resultado.total)}</p>
+            <div className="bg-white/50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-700/50 text-center">
+              <p className="text-slate-500 dark:text-slate-400 text-[9px] font-bold uppercase mb-1">Total</p>
+              <p className="text-slate-900 dark:text-white text-[13px] font-mono font-bold">R$ {formatMoeda(resultado.total)}</p>
             </div>
-            <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-700/50 text-center">
+            <div className="bg-white/50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-700/50 text-center">
               <p className="text-amber-400/80 text-[9px] font-bold uppercase mb-1">Juros</p>
               <p className="text-amber-400 text-[13px] font-mono font-bold">R$ {formatMoeda(resultado.juros)}</p>
             </div>
@@ -255,13 +255,13 @@ export function CalculadoraTab() {
       )}
 
       {resultado && resultado.tipo !== 'ok' && (
-        <div className={`p-4 rounded-2xl border ${resultado.tipo === 'erro' ? 'bg-red-500/10 border-red-500/30 text-red-300' : 'bg-slate-800 border-slate-700 text-slate-300'} text-sm`}>
+        <div className={`p-4 rounded-2xl border ${resultado.tipo === 'erro' ? 'bg-red-500/10 border-red-500/30 text-red-300' : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300'} text-sm`}>
           {resultado.texto}
         </div>
       )}
 
-      <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50 text-[11px] text-slate-500 leading-relaxed">
-        <span className="font-bold text-slate-400">Fórmula (Tabela PRICE):</span> Parcela = Valor financiado × Índice ÷ (1 − (1 + Índice)<sup>−Parcelas</sup>)
+      <div className="bg-slate-100/50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-700/50 text-[11px] text-slate-500 leading-relaxed">
+        <span className="font-bold text-slate-500 dark:text-slate-400">Fórmula (Tabela PRICE):</span> Parcela = Valor financiado × Índice ÷ (1 − (1 + Índice)<sup>−Parcelas</sup>)
       </div>
     </div>
   );
