@@ -790,7 +790,7 @@ export default function App() {
   const renderTasks = () => (
     <div className="space-y-6 animate-in fade-in pb-20">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-slate-100">Agenda Completa</h1>
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Agenda Completa</h1>
         <button onClick={() => { cancelEditTask(); setShowAddTask(true); hapticFeedback(30); }} className="bg-blue-600 text-slate-900 dark:text-white p-2 rounded-full transition-colors shadow-lg shadow-blue-500/30 active:scale-95"><Plus className="w-5 h-5" /></button>
       </div>
 
@@ -1006,7 +1006,7 @@ export default function App() {
   const renderPortfolio = () => (
     <div className="space-y-6 animate-in fade-in pb-20">
       <header className="flex justify-between items-start mb-6">
-        <div><h1 className="text-2xl font-bold text-slate-100">Ativos</h1><p className="text-slate-500 dark:text-slate-400">Distribuição do património.</p></div>
+        <div><h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Ativos</h1><p className="text-slate-500 dark:text-slate-400">Distribuição do património.</p></div>
         <button onClick={() => setIsEditingPortfolioCats(!isEditingPortfolioCats)} className={`p-2 rounded-full ${isEditingPortfolioCats ? 'bg-blue-600 text-slate-900 dark:text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}><Edit2 className="w-5 h-5" /></button>
       </header>
 

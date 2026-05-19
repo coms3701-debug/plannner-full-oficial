@@ -180,7 +180,7 @@ export function CalculadoraTab() {
     <div className="space-y-6 animate-in fade-in pb-20">
       <header className="flex justify-between items-start mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-slate-100">Cálculo</h1>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Cálculo</h1>
           <p className="text-slate-500 dark:text-slate-400">Calculadora de financiamento (PRICE).</p>
         </div>
         <div className="w-9 h-9 rounded-full bg-blue-600/20 border border-blue-500/50 flex items-center justify-center">
