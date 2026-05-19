@@ -27,7 +27,7 @@ import { AuthScreen } from './components/AuthScreen';
 import { CalculadoraTab } from './components/CalculadoraTab';
 import { downloadTaskICS } from './utils/ics';
 
-const APP_VERSION = 'v6.0.0';
+const APP_VERSION = 'v6.0.1';
 
 
 export default function App() {
@@ -797,20 +797,20 @@ export default function App() {
               <input type="date" required className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none color-scheme-dark focus:border-blue-500" value={newTask.dueDate} onChange={e => setNewTask({...newTask, dueDate: e.target.value})} />
             </div>
             <div className="flex-1 min-w-0">
-              <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Hora (Op)</label>
-              <input type="time" className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none color-scheme-dark focus:border-blue-500" value={newTask.dueTime} onChange={e => setNewTask({...newTask, dueTime: e.target.value})} />
-            </div>
-          </div>
-          <div className="flex gap-4">
-            <div className="flex-1 min-w-0">
-              <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Hora Fim (Op)</label>
-              <input type="time" className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none color-scheme-dark focus:border-blue-500" value={newTask.endTime} onChange={e => setNewTask({...newTask, endTime: e.target.value})} />
-            </div>
-            <div className="flex-1 min-w-0">
               <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Recorrência</label>
               <select className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-blue-500" value={newTask.recurrence} onChange={e => setNewTask({...newTask, recurrence: e.target.value})}>
                 <option value="none">Nenhuma</option><option value="daily">Diária</option><option value="weekly">Semanal</option><option value="monthly">Mensal</option><option value="yearly">Anual</option>
               </select>
+            </div>
+          </div>
+          <div className="flex gap-4">
+            <div className="flex-1 min-w-0">
+              <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Hora Início (Op)</label>
+              <input type="time" className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none color-scheme-dark focus:border-blue-500" value={newTask.dueTime} onChange={e => setNewTask({...newTask, dueTime: e.target.value})} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Hora Fim (Op)</label>
+              <input type="time" className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none color-scheme-dark focus:border-blue-500" value={newTask.endTime} onChange={e => setNewTask({...newTask, endTime: e.target.value})} />
             </div>
           </div>
           <div>
