@@ -27,7 +27,7 @@ import { AuthScreen } from './components/AuthScreen';
 import { CalculadoraTab } from './components/CalculadoraTab';
 import { downloadTaskICS } from './utils/ics';
 
-const APP_VERSION = 'v6.1.0';
+const APP_VERSION = 'v6.1.1';
 
 
 export default function App() {
@@ -723,7 +723,7 @@ export default function App() {
       <div>
         <h2 className="text-sm font-bold uppercase tracking-widest text-blue-400 mb-4 px-1 flex items-center gap-2"><AlertCircle className="w-4 h-4" /> Foco do Dia</h2>
         {dayTasksForDashboard.length === 0 ? (
-          <div className="bg-white/50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 p-4 rounded-xl text-center border-dashed"><p className="text-slate-500 dark:text-slate-400 font-medium text-sm">A sua lista de foco está limpa! ✨</p></div>
+          <div className="bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-4 rounded-xl text-center shadow-sm"><p className="text-slate-600 dark:text-slate-400 font-medium text-sm">A sua lista de foco está limpa! ✨</p></div>
         ) : (
           <div className="space-y-2">
             {dayTasksForDashboard.filter(t => t && t.id).map(task => {
