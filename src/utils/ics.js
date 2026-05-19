@@ -29,7 +29,16 @@ export const generateTaskICS = (task) => {
   const [y, m, d] = task.dueDate.split('-').map(Number);
   const [hh, mm] = (task.dueTime || '09:00').split(':').map(Number);
   const startDate = new Date(y, m - 1, d, hh, mm);
-  const endDate = new Date(startDate.getTime() + 60 * 60 * 1000); // +1h default
+
+  let endDate;
+  if (task.endTime && /^\d{1,2}:\d{2}$/.test(task.endTime)) {
+    const [eh, em] = task.endTime.split(':').map(Number);
+    endDate = new Date(y, m - 1, d, eh, em);
+    // Se hora fim for antes do início, assume que termina no dia seguinte
+    if (endDate <= startDate) endDate = new Date(endDate.getTime() + 24 * 60 * 60 * 1000);
+  } else {
+    endDate = new Date(startDate.getTime() + 60 * 60 * 1000); // +1h default
+  }
 
   const uid = `task-${task.id}-${Date.now()}@plannerfull`;
   const dtStamp = formatUTC(new Date());

@@ -27,7 +27,7 @@ import { AuthScreen } from './components/AuthScreen';
 import { CalculadoraTab } from './components/CalculadoraTab';
 import { downloadTaskICS } from './utils/ics';
 
-const APP_VERSION = 'v5.0';
+const APP_VERSION = 'v5.1';
 
 
 export default function App() {
@@ -124,7 +124,7 @@ export default function App() {
   const [editingTaskId, setEditingTaskId] = useState(null);
   
   // INCLUI O CAMPO DESCRIPTION (Notas na Agenda)
-  const [newTask, setNewTask] = useState({ title: '', category: 'meta', dueDate: '', dueTime: '', hasReminder: false, recurrence: 'none', description: '' });
+  const [newTask, setNewTask] = useState({ title: '', category: 'meta', dueDate: '', dueTime: '', endTime: '', hasReminder: false, recurrence: 'none', description: '' });
   
   const [showAddHabit, setShowAddHabit] = useState(false);
   const [newHabitLabel, setNewHabitLabel] = useState('');
@@ -559,20 +559,20 @@ export default function App() {
     } else {
       setTasks([...tasks, { ...newTask, id: Date.now(), completed: false }]);
     }
-    setNewTask({ title: '', category: taskCategories[0]?.id || 'meta', dueDate: '', dueTime: '', recurrence: 'none', hasReminder: false, description: '' });
+    setNewTask({ title: '', category: taskCategories[0]?.id || 'meta', dueDate: '', dueTime: '', endTime: '', recurrence: 'none', hasReminder: false, description: '' });
     setShowAddTask(false);
     setEditingTaskId(null);
   };
 
   const startEditTask = (task) => {
-    setNewTask({ title: task.title, category: task.category, dueDate: task.dueDate, dueTime: task.dueTime || '', recurrence: task.recurrence || 'none', hasReminder: task.hasReminder || false, description: task.description || '' });
+    setNewTask({ title: task.title, category: task.category, dueDate: task.dueDate, dueTime: task.dueTime || '', endTime: task.endTime || '', recurrence: task.recurrence || 'none', hasReminder: task.hasReminder || false, description: task.description || '' });
     setEditingTaskId(task.id);
     setShowAddTask(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const cancelEditTask = () => {
-    setNewTask({ title: '', category: taskCategories[0]?.id || 'meta', dueDate: '', recurrence: 'none', description: '' });
+    setNewTask({ title: '', category: taskCategories[0]?.id || 'meta', dueDate: '', dueTime: '', endTime: '', recurrence: 'none', hasReminder: false, description: '' });
     setEditingTaskId(null);
     setShowAddTask(false);
     setIsEditingCategories(false);
@@ -802,12 +802,16 @@ export default function App() {
             </div>
           </div>
           <div className="flex gap-4">
-             <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0">
+              <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Hora Fim (Op)</label>
+              <input type="time" className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none color-scheme-dark focus:border-blue-500" value={newTask.endTime} onChange={e => setNewTask({...newTask, endTime: e.target.value})} />
+            </div>
+            <div className="flex-1 min-w-0">
               <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Recorrência</label>
               <select className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-blue-500" value={newTask.recurrence} onChange={e => setNewTask({...newTask, recurrence: e.target.value})}>
                 <option value="none">Nenhuma</option><option value="daily">Diária</option><option value="weekly">Semanal</option><option value="monthly">Mensal</option><option value="yearly">Anual</option>
               </select>
-             </div>
+            </div>
           </div>
           <div>
             <div className="flex justify-between items-center mb-3">
