@@ -27,7 +27,7 @@ import { AuthScreen } from './components/AuthScreen';
 import { CalculadoraTab } from './components/CalculadoraTab';
 import { downloadTaskICS } from './utils/ics';
 
-const APP_VERSION = 'v6.0.2';
+const APP_VERSION = 'v6.0.3';
 
 
 export default function App() {
@@ -791,24 +791,36 @@ export default function App() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="min-w-0">
+          <div className="grid grid-cols-2 gap-3 w-full">
+            <div className="min-w-0 flex flex-col">
               <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Data</label>
-              <input type="date" required className="w-full h-12 bg-slate-900 border border-slate-700 rounded-xl px-3 text-white text-left outline-none color-scheme-dark focus:border-blue-500" value={newTask.dueDate} onChange={e => setNewTask({...newTask, dueDate: e.target.value})} />
+              <input type="date" required
+                style={{ minWidth: 0, maxWidth: '100%', WebkitAppearance: 'none', appearance: 'none' }}
+                className="w-full h-12 bg-slate-900 border border-slate-700 rounded-xl px-3 text-white text-sm outline-none color-scheme-dark focus:border-blue-500 box-border"
+                value={newTask.dueDate} onChange={e => setNewTask({...newTask, dueDate: e.target.value})} />
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex flex-col">
               <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Recorrência</label>
-              <select className="w-full h-12 bg-slate-900 border border-slate-700 rounded-xl px-3 text-white outline-none focus:border-blue-500" value={newTask.recurrence} onChange={e => setNewTask({...newTask, recurrence: e.target.value})}>
+              <select
+                style={{ minWidth: 0, maxWidth: '100%' }}
+                className="w-full h-12 bg-slate-900 border border-slate-700 rounded-xl px-3 text-white text-sm outline-none focus:border-blue-500 box-border"
+                value={newTask.recurrence} onChange={e => setNewTask({...newTask, recurrence: e.target.value})}>
                 <option value="none">Nenhuma</option><option value="daily">Diária</option><option value="weekly">Semanal</option><option value="monthly">Mensal</option><option value="yearly">Anual</option>
               </select>
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex flex-col">
               <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Hora Início (Op)</label>
-              <input type="time" className="w-full h-12 bg-slate-900 border border-slate-700 rounded-xl px-3 text-white text-left outline-none color-scheme-dark focus:border-blue-500" value={newTask.dueTime} onChange={e => setNewTask({...newTask, dueTime: e.target.value})} />
+              <input type="time"
+                style={{ minWidth: 0, maxWidth: '100%', WebkitAppearance: 'none', appearance: 'none' }}
+                className="w-full h-12 bg-slate-900 border border-slate-700 rounded-xl px-3 text-white text-sm outline-none color-scheme-dark focus:border-blue-500 box-border"
+                value={newTask.dueTime} onChange={e => setNewTask({...newTask, dueTime: e.target.value})} />
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex flex-col">
               <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Hora Fim (Op)</label>
-              <input type="time" className="w-full h-12 bg-slate-900 border border-slate-700 rounded-xl px-3 text-white text-left outline-none color-scheme-dark focus:border-blue-500" value={newTask.endTime} onChange={e => setNewTask({...newTask, endTime: e.target.value})} />
+              <input type="time"
+                style={{ minWidth: 0, maxWidth: '100%', WebkitAppearance: 'none', appearance: 'none' }}
+                className="w-full h-12 bg-slate-900 border border-slate-700 rounded-xl px-3 text-white text-sm outline-none color-scheme-dark focus:border-blue-500 box-border"
+                value={newTask.endTime} onChange={e => setNewTask({...newTask, endTime: e.target.value})} />
             </div>
           </div>
           <div>
