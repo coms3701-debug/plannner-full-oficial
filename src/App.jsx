@@ -3,7 +3,7 @@ import {
   Home, CheckSquare, Activity, Briefcase, CalendarClock, Plus, Check, ChevronLeft, ChevronRight,
   Trash2, Edit2, X, User, Settings, BellRing, AlertCircle, Clock, GripVertical,
   Cloud, CloudOff, RefreshCw, LogOut, ListTodo, CheckCircle2,
-  Eye, EyeOff, FileText, Download, Upload, CalendarPlus
+  Eye, EyeOff, FileText, Download, Upload, CalendarPlus, Calculator
 } from 'lucide-react';
 
 import { initializeApp } from 'firebase/app';
@@ -24,6 +24,7 @@ import { INITIAL_HABITS_LIST, INITIAL_CATEGORIES, INITIAL_PORTFOLIO_CATEGORIES }
 import { SwipeableItem, SwipeHint } from './components/SwipeableItem';
 import { TabErrorBoundary } from './components/TabErrorBoundary';
 import { AuthScreen } from './components/AuthScreen';
+import { CalculadoraTab } from './components/CalculadoraTab';
 import { downloadTaskICS } from './utils/ics';
 
 const APP_VERSION = 'v5.0';
@@ -1080,6 +1081,7 @@ export default function App() {
             {activeTab === 'dashboard' && renderDashboard()}
             {activeTab === 'tasks' && renderTasks()}
             {activeTab === 'routine' && renderRoutine()}
+            {activeTab === 'calculadora' && <CalculadoraTab />}
             {activeTab === 'portfolio' && renderPortfolio()}
           </TabErrorBoundary>
         </main>
@@ -1087,7 +1089,7 @@ export default function App() {
         <nav className="shrink-0 bg-slate-900 border-t border-slate-800 pb-safe pt-2 px-6 flex justify-between items-center w-full z-20">
           {[
             { id: 'dashboard', icon: Home, label: 'Início' }, { id: 'tasks', icon: CheckSquare, label: 'Agenda' },
-            { id: 'routine', icon: ListTodo, label: 'Foco' }, { id: 'portfolio', icon: Briefcase, label: 'Ativos' }
+            { id: 'routine', icon: ListTodo, label: 'Foco' }, { id: 'calculadora', icon: Calculator, label: 'Cálculo' }, { id: 'portfolio', icon: Briefcase, label: 'Ativos' }
           ].map(tab => {
             const IconComponent = tab.icon;
             return (
