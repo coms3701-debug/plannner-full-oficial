@@ -1,268 +1,375 @@
-import React, { useState } from 'react';
-import { Calculator, RotateCcw } from 'lucide-react';
-import { formatCurrencyInput, parseCurrencyToNumber } from '../utils/currency';
+import React, { useState, useMemo } from 'react';
+import { TrendingUp, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
 
-// ===== Fórmulas da Tabela PRICE =====
-const calcParcela = (vp, i, n) => {
-  if (i === 0) return vp / n;
-  return (vp * i) / (1 - Math.pow(1 + i, -n));
+// ── Utilidades ────────────────────────────────────────────────────────────────
+
+const fmtBRL = (n) =>
+  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n || 0);
+
+const fmtPct = (n, dec = 2) =>
+  new Intl.NumberFormat('pt-BR', { minimumFractionDigits: dec, maximumFractionDigits: dec }).format(n || 0) + '%';
+
+/** Lê string pt-BR: "1.000,50" → 1000.5 */
+const parsePtBR = (str) => {
+  if (!str && str !== 0) return 0;
+  const clean = String(str).replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, '');
+  return parseFloat(clean) || 0;
 };
 
-const calcValorFinanciado = (pmt, i, n) => {
-  if (i === 0) return pmt * n;
-  return (pmt * (1 - Math.pow(1 + i, -n))) / i;
+/** Formata moeda enquanto digita (mantém apenas dígitos, insere vírgula) */
+const fmtCurrencyInput = (digits) => {
+  if (!digits) return '';
+  const n = parseInt(digits.replace(/\D/g, '') || '0', 10);
+  return (n / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 
-const calcNumeroParcelas = (vp, pmt, i) => {
-  if (i === 0) return vp / pmt;
-  const arg = 1 - (vp * i) / pmt;
-  if (arg <= 0) return null;
-  return -Math.log(arg) / Math.log(1 + i);
+/** Formata taxa enquanto digita (max 4 casas) */
+const fmtRateInput = (raw) => {
+  let v = raw.replace(/[^\d,]/g, '');
+  const p = v.split(',');
+  return p.length > 1 ? `${p[0]},${p[1].slice(0, 4)}` : v;
 };
 
-// Newton-Raphson com derivada numérica + segurança de bisseção
-const calcIndice = (vp, pmt, n) => {
-  if (pmt * n <= vp) return null;
-  if (pmt <= 0 || vp <= 0 || n <= 0) return null;
-  const f = (i) => calcParcela(vp, i, n) - pmt;
-  let i = ((pmt * n) / vp - 1) / n;
-  if (i <= 0) i = 0.01;
-  for (let iter = 0; iter < 200; iter++) {
-    const fi = f(i);
-    if (Math.abs(fi) < 1e-10) return i;
-    const h = Math.max(i * 1e-6, 1e-8);
-    const df = (f(i + h) - fi) / h;
-    if (df === 0) break;
-    let novo = i - fi / df;
-    if (novo <= 0) novo = i / 2;
-    i = novo;
+// ── Cálculo central ────────────────────────────────────────────────────────────
+
+/**
+ * Calcula projeção mês a mês.
+ * @param {number} pv    Valor inicial
+ * @param {number} pmt   Aporte mensal
+ * @param {number} rMes  Taxa mensal (fração, ex: 0.011)
+ * @param {number} meses Número de meses
+ * @param {number} infMes Inflação mensal (fração)
+ */
+const calcProjecao = (pv, pmt, rMes, meses, infMes) => {
+  const pontos = []; // snapshot anual
+  let saldo = pv;
+  let totalAportado = pv;
+  let saldoReal = pv; // deflacionado pela inflação acumulada
+  let fatorInflacao = 1;
+
+  for (let m = 1; m <= meses; m++) {
+    saldo = saldo * (1 + rMes) + pmt;
+    totalAportado += pmt;
+    fatorInflacao *= (1 + infMes);
+    saldoReal = saldo / fatorInflacao;
+
+    if (m % 12 === 0 || m === meses) {
+      pontos.push({
+        mes: m,
+        ano: Math.ceil(m / 12),
+        saldo,
+        totalAportado,
+        saldoReal,
+        ganhoNominal: saldo - totalAportado,
+        ganhoReal: saldoReal - totalAportado,
+        fatorInflacao,
+      });
+    }
   }
-  return i;
+
+  const ultimo = pontos[pontos.length - 1] || {};
+  return { pontos, ...ultimo };
 };
 
-const formatMoeda = (n) =>
-  new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
-
-const formatTaxa = (n) =>
-  new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(n);
-
-const lerTaxa = (str) => {
-  if (!str || !String(str).trim()) return null;
-  const limpa = String(str).replace(/\./g, '').replace(',', '.').trim();
-  const num = parseFloat(limpa);
-  return isNaN(num) ? null : num;
-};
-
-const lerNumero = (str) => {
-  if (!str || !String(str).trim()) return null;
-  const limpa = String(str).replace(/\./g, '').replace(',', '.').trim();
-  const num = parseFloat(limpa);
-  return isNaN(num) ? null : num;
-};
+// ── Componente ─────────────────────────────────────────────────────────────────
 
 export function CalculadoraTab() {
-  const [valorFinanciado, setValorFinanciado] = useState('');
-  const [indice, setIndice] = useState('');
-  const [parcelas, setParcelas] = useState('');
-  const [valorParcela, setValorParcela] = useState('');
-  const [resultado, setResultado] = useState(null);
-  const [ultimoCalculado, setUltimoCalculado] = useState(null);
+  // Inputs
+  const [valorInicial, setValorInicial] = useState('');
+  const [aporteMensal, setAporteMensal] = useState('');
+  const [taxa, setTaxa] = useState('');
+  const [periodo, setPeriodo] = useState('');
+  const [inflacao, setInflacao] = useState('0,50');
+  const [unidadePeriodo, setUnidadePeriodo] = useState('anos'); // 'anos' | 'meses'
+  const [unidadeTaxa, setUnidadeTaxa] = useState('mes'); // 'mes' | 'ano'
+  const [mostrarTabela, setMostrarTabela] = useState(false);
 
-  const montarResumo = (vp, pmt, n, titulo) => {
-    const total = pmt * n;
-    const juros = total - vp;
-    return { tipo: 'ok', titulo, parcela: pmt, total, juros };
-  };
+  // Parse valores
+  const pv = parsePtBR(valorInicial);
+  const pmt = parsePtBR(aporteMensal);
+  const txRaw = parsePtBR(taxa) / 100;
+  const infRaw = parsePtBR(inflacao) / 100;
+  const perRaw = parsePtBR(periodo);
 
-  const calcular = () => {
-    const vp = parseCurrencyToNumber(valorFinanciado) || null;
-    const tx = lerTaxa(indice);
-    const n = lerNumero(parcelas);
-    const pmt = parseCurrencyToNumber(valorParcela) || null;
+  // Converter taxa para mensal se necessário
+  const rMes = unidadeTaxa === 'ano' ? Math.pow(1 + txRaw, 1 / 12) - 1 : txRaw;
+  // Converter período para meses
+  const meses = unidadePeriodo === 'anos' ? Math.round(perRaw * 12) : Math.round(perRaw);
 
-    const valores = { valorFinanciado: vp, indice: tx, parcelas: n, valorParcela: pmt };
-    const vazios = Object.keys(valores).filter((k) => valores[k] === null);
+  const pronto = pv > 0 && rMes > 0 && meses > 0;
 
-    if (vazios.length > 1) {
-      setResultado({ tipo: 'info', texto: 'Preencha pelo menos 3 campos.' });
-      return;
-    }
-
-    let campoAlvo = vazios.length === 1 ? vazios[0] : ultimoCalculado;
-    if (!campoAlvo) {
-      setResultado({ tipo: 'info', texto: 'Deixe um campo vazio para calcular.' });
-      return;
-    }
-
-    const taxa = tx !== null ? tx / 100 : null;
-
-    try {
-      if (campoAlvo === 'valorParcela') {
-        if (vp === null || taxa === null || n === null || vp <= 0 || n <= 0 || taxa < 0) {
-          setResultado({ tipo: 'erro', texto: 'Confira os valores informados.' });
-          return;
-        }
-        const pmtCalc = calcParcela(vp, taxa, n);
-        setValorParcela(formatMoeda(pmtCalc));
-        setUltimoCalculado('valorParcela');
-        setResultado(montarResumo(vp, pmtCalc, n, 'Parcela mensal calculada'));
-        return;
-      }
-      if (campoAlvo === 'valorFinanciado') {
-        if (pmt === null || taxa === null || n === null || pmt <= 0 || n <= 0 || taxa < 0) {
-          setResultado({ tipo: 'erro', texto: 'Confira os valores informados.' });
-          return;
-        }
-        const vpCalc = calcValorFinanciado(pmt, taxa, n);
-        setValorFinanciado(formatMoeda(vpCalc));
-        setUltimoCalculado('valorFinanciado');
-        setResultado(montarResumo(vpCalc, pmt, n, 'Valor financiado calculado'));
-        return;
-      }
-      if (campoAlvo === 'parcelas') {
-        if (vp === null || pmt === null || taxa === null || vp <= 0 || pmt <= 0 || taxa < 0) {
-          setResultado({ tipo: 'erro', texto: 'Confira os valores informados.' });
-          return;
-        }
-        const nCalc = calcNumeroParcelas(vp, pmt, taxa);
-        if (nCalc === null || !isFinite(nCalc)) {
-          setResultado({ tipo: 'erro', texto: 'Com essa parcela e índice, o financiamento não termina. Aumente a parcela.' });
-          return;
-        }
-        setParcelas(formatTaxa(nCalc));
-        setUltimoCalculado('parcelas');
-        setResultado(montarResumo(vp, pmt, nCalc, 'Número de parcelas calculado'));
-        return;
-      }
-      if (campoAlvo === 'indice') {
-        if (vp === null || pmt === null || n === null || vp <= 0 || pmt <= 0 || n <= 0) {
-          setResultado({ tipo: 'erro', texto: 'Confira os valores informados.' });
-          return;
-        }
-        const iCalc = calcIndice(vp, pmt, n);
-        if (iCalc === null || !isFinite(iCalc)) {
-          setResultado({ tipo: 'erro', texto: 'Não foi possível calcular o índice. O total pago precisa ser maior que o valor financiado.' });
-          return;
-        }
-        setIndice(formatTaxa(iCalc * 100));
-        setUltimoCalculado('indice');
-        setResultado(montarResumo(vp, pmt, n, 'Índice mensal calculado'));
-        return;
-      }
-    } catch (e) {
-      setResultado({ tipo: 'erro', texto: 'Não foi possível calcular. Confira os valores.' });
-    }
-  };
+  const resultado = useMemo(() => {
+    if (!pronto) return null;
+    return calcProjecao(pv, pmt, rMes, meses, infRaw);
+  }, [pv, pmt, rMes, meses, infRaw, pronto]);
 
   const limpar = () => {
-    setValorFinanciado('');
-    setIndice('');
-    setParcelas('');
-    setValorParcela('');
-    setResultado(null);
-    setUltimoCalculado(null);
+    setValorInicial('');
+    setAporteMensal('');
+    setTaxa('');
+    setPeriodo('');
+    setInflacao('0,50');
+    setMostrarTabela(false);
   };
 
-  const aoEditar = (setter, id) => (e) => {
-    if (id === ultimoCalculado) setUltimoCalculado(null);
-    setter(e.target.value);
-  };
-
-  const formatarIndiceInput = (raw) => {
-    let v = raw.replace(/[^\d,]/g, '');
-    const partes = v.split(',');
-    let inteiro = partes[0];
-    let decimal = partes[1] ? partes[1].slice(0, 4) : '';
-    return v.includes(',') ? `${inteiro},${decimal}` : inteiro;
-  };
+  // Cores de destaque para ganho real
+  const corGanhoReal = resultado && resultado.ganhoReal > 0 ? 'text-emerald-500' : 'text-red-400';
 
   return (
-    <div className="space-y-6 animate-in fade-in pb-20">
-      <header className="flex justify-between items-start mb-6">
+    <div className="space-y-5 animate-in fade-in pb-24">
+
+      {/* Header */}
+      <header className="flex justify-between items-start">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Cálculo</h1>
-          <p className="text-slate-500 dark:text-slate-400">Calculadora de financiamento (PRICE).</p>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Investimento</h1>
+          <p className="text-slate-500 dark:text-slate-400 text-sm">Projeção de ganhos pré-fixados</p>
         </div>
-        <div className="w-9 h-9 rounded-full bg-blue-600/20 border border-blue-500/50 flex items-center justify-center">
-          <Calculator className="w-5 h-5 text-blue-400" />
+        <div className="w-10 h-10 rounded-full bg-emerald-600/20 border border-emerald-500/50 flex items-center justify-center">
+          <TrendingUp className="w-5 h-5 text-emerald-400" />
         </div>
       </header>
 
-      <div className="bg-slate-100 dark:bg-slate-800 p-4 rounded-xl border border-slate-300 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-        Preencha 3 campos e deixe vazio o que deseja calcular. Toque em <span className="text-blue-400 font-bold">Calcular</span>.
-      </div>
+      {/* ── INPUTS ── */}
+      <div className="space-y-3">
 
-      <div className="grid grid-cols-1 gap-4">
+        {/* Valor inicial */}
         <div className="bg-slate-100 dark:bg-slate-800 p-4 rounded-xl border border-slate-300 dark:border-slate-700">
-          <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 block">Valor financiado</label>
+          <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 block">
+            Valor Inicial
+          </label>
           <div className="relative">
-            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 font-medium text-[13px]">R$</span>
-            <input type="text" inputMode="numeric" placeholder="0,00" value={valorFinanciado} onChange={aoEditar((v) => setValorFinanciado(formatCurrencyInput(v.replace(/[^\d]/g, ''))), 'valorFinanciado')} className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg py-2.5 pl-7 pr-2 text-slate-900 dark:text-white font-mono text-[14px]" />
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 font-medium text-sm">R$</span>
+            <input
+              type="text" inputMode="numeric" placeholder="10.000,00"
+              value={valorInicial}
+              onChange={(e) => setValorInicial(fmtCurrencyInput(e.target.value))}
+              className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg py-3 pl-9 pr-3 text-slate-900 dark:text-white font-mono text-sm outline-none focus:border-emerald-500"
+              style={{ minWidth: 0, WebkitAppearance: 'none' }}
+            />
           </div>
         </div>
 
+        {/* Aporte mensal */}
         <div className="bg-slate-100 dark:bg-slate-800 p-4 rounded-xl border border-slate-300 dark:border-slate-700">
-          <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 block">Índice mensal</label>
+          <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 block">
+            Aporte Mensal
+          </label>
           <div className="relative">
-            <input type="text" inputMode="decimal" placeholder="1,10" value={indice} onChange={(e) => { if (ultimoCalculado === 'indice') setUltimoCalculado(null); setIndice(formatarIndiceInput(e.target.value)); }} className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg py-2.5 pl-2 pr-7 text-slate-900 dark:text-white font-mono text-[14px]" />
-            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 font-medium text-[13px]">%</span>
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 font-medium text-sm">R$</span>
+            <input
+              type="text" inputMode="numeric" placeholder="1.000,00"
+              value={aporteMensal}
+              onChange={(e) => setAporteMensal(fmtCurrencyInput(e.target.value))}
+              className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg py-3 pl-9 pr-3 text-slate-900 dark:text-white font-mono text-sm outline-none focus:border-emerald-500"
+              style={{ minWidth: 0, WebkitAppearance: 'none' }}
+            />
           </div>
         </div>
 
+        {/* Taxa */}
         <div className="bg-slate-100 dark:bg-slate-800 p-4 rounded-xl border border-slate-300 dark:border-slate-700">
-          <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 block">Número de parcelas</label>
-          <input type="text" inputMode="numeric" placeholder="30" value={parcelas} onChange={(e) => { if (ultimoCalculado === 'parcelas') setUltimoCalculado(null); setParcelas(e.target.value.replace(/[^\d,]/g, '')); }} className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg py-2.5 px-2 text-slate-900 dark:text-white font-mono text-[14px]" />
-        </div>
-
-        <div className="bg-slate-100 dark:bg-slate-800 p-4 rounded-xl border border-slate-300 dark:border-slate-700">
-          <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 block">Valor da parcela</label>
-          <div className="relative">
-            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 font-medium text-[13px]">R$</span>
-            <input type="text" inputMode="numeric" placeholder="0,00" value={valorParcela} onChange={aoEditar((v) => setValorParcela(formatCurrencyInput(v.replace(/[^\d]/g, ''))), 'valorParcela')} className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg py-2.5 pl-7 pr-2 text-slate-900 dark:text-white font-mono text-[14px]" />
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <button onClick={calcular} className="bg-blue-600 active:bg-blue-700 active:scale-95 transition-all text-slate-900 dark:text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20">
-          <Calculator className="w-4 h-4" />
-          Calcular
-        </button>
-        <button onClick={limpar} className="bg-slate-100 dark:bg-slate-800 active:bg-slate-700 active:scale-95 transition-all text-slate-700 dark:text-slate-300 font-bold py-3 rounded-xl border border-slate-300 dark:border-slate-700 flex items-center justify-center gap-2">
-          <RotateCcw className="w-4 h-4" />
-          Limpar
-        </button>
-      </div>
-
-      {resultado && resultado.tipo === 'ok' && (
-        <div className="bg-blue-600/10 border border-blue-500/30 p-5 rounded-2xl space-y-3 animate-in fade-in">
-          <p className="text-blue-400 font-bold text-center">{resultado.titulo}</p>
-          <div className="grid grid-cols-3 gap-2">
-            <div className="bg-white/50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-700/50 text-center">
-              <p className="text-slate-500 dark:text-slate-400 text-[9px] font-bold uppercase mb-1">Parcela</p>
-              <p className="text-slate-900 dark:text-white text-[13px] font-mono font-bold">R$ {formatMoeda(resultado.parcela)}</p>
-            </div>
-            <div className="bg-white/50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-700/50 text-center">
-              <p className="text-slate-500 dark:text-slate-400 text-[9px] font-bold uppercase mb-1">Total</p>
-              <p className="text-slate-900 dark:text-white text-[13px] font-mono font-bold">R$ {formatMoeda(resultado.total)}</p>
-            </div>
-            <div className="bg-white/50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-700/50 text-center">
-              <p className="text-amber-400/80 text-[9px] font-bold uppercase mb-1">Juros</p>
-              <p className="text-amber-400 text-[13px] font-mono font-bold">R$ {formatMoeda(resultado.juros)}</p>
+          <div className="flex justify-between items-center mb-1.5">
+            <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              Taxa de Juros
+            </label>
+            <div className="flex bg-white dark:bg-slate-900 rounded-lg border border-slate-300 dark:border-slate-700 overflow-hidden text-[10px] font-bold">
+              {['mes', 'ano'].map((u) => (
+                <button
+                  key={u}
+                  onClick={() => setUnidadeTaxa(u)}
+                  className={`px-2.5 py-1 transition-colors ${unidadeTaxa === u ? 'bg-emerald-600 text-white' : 'text-slate-500 dark:text-slate-400'}`}
+                >
+                  {u === 'mes' ? '% a.m.' : '% a.a.'}
+                </button>
+              ))}
             </div>
           </div>
+          <div className="relative">
+            <input
+              type="text" inputMode="decimal" placeholder="1,10"
+              value={taxa}
+              onChange={(e) => setTaxa(fmtRateInput(e.target.value))}
+              className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg py-3 pl-3 pr-8 text-slate-900 dark:text-white font-mono text-sm outline-none focus:border-emerald-500"
+              style={{ minWidth: 0, WebkitAppearance: 'none' }}
+            />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 font-medium text-sm">%</span>
+          </div>
+          {unidadeTaxa === 'ano' && rMes > 0 && (
+            <p className="text-[10px] text-emerald-500 mt-1 font-medium">≈ {fmtPct(rMes * 100, 4)} ao mês</p>
+          )}
+        </div>
+
+        {/* Período */}
+        <div className="bg-slate-100 dark:bg-slate-800 p-4 rounded-xl border border-slate-300 dark:border-slate-700">
+          <div className="flex justify-between items-center mb-1.5">
+            <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              Período
+            </label>
+            <div className="flex bg-white dark:bg-slate-900 rounded-lg border border-slate-300 dark:border-slate-700 overflow-hidden text-[10px] font-bold">
+              {['anos', 'meses'].map((u) => (
+                <button
+                  key={u}
+                  onClick={() => setUnidadePeriodo(u)}
+                  className={`px-2.5 py-1 transition-colors ${unidadePeriodo === u ? 'bg-emerald-600 text-white' : 'text-slate-500 dark:text-slate-400'}`}
+                >
+                  {u}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="relative">
+            <input
+              type="text" inputMode="numeric" placeholder={unidadePeriodo === 'anos' ? '5' : '60'}
+              value={periodo}
+              onChange={(e) => setPeriodo(e.target.value.replace(/[^\d]/g, ''))}
+              className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg py-3 pl-3 pr-16 text-slate-900 dark:text-white font-mono text-sm outline-none focus:border-emerald-500"
+              style={{ minWidth: 0, WebkitAppearance: 'none' }}
+            />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 font-medium text-[11px]">
+              {unidadePeriodo}
+            </span>
+          </div>
+          {periodo && <p className="text-[10px] text-slate-500 mt-1">{meses} meses no total</p>}
+        </div>
+
+        {/* Inflação */}
+        <div className="bg-slate-100 dark:bg-slate-800 p-4 rounded-xl border border-slate-300 dark:border-slate-700">
+          <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 block">
+            Inflação Estimada (% a.m.)
+          </label>
+          <div className="relative">
+            <input
+              type="text" inputMode="decimal" placeholder="0,50"
+              value={inflacao}
+              onChange={(e) => setInflacao(fmtRateInput(e.target.value))}
+              className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg py-3 pl-3 pr-8 text-slate-900 dark:text-white font-mono text-sm outline-none focus:border-emerald-500"
+              style={{ minWidth: 0, WebkitAppearance: 'none' }}
+            />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 font-medium text-sm">%</span>
+          </div>
+          <p className="text-[10px] text-slate-500 mt-1">IPCA médio histórico ≈ 0,40% a.m.</p>
+        </div>
+      </div>
+
+      {/* ── Botão limpar ── */}
+      <button
+        onClick={limpar}
+        className="w-full bg-slate-100 dark:bg-slate-800 active:bg-slate-200 dark:active:bg-slate-700 active:scale-95 transition-all text-slate-600 dark:text-slate-300 font-bold py-3 rounded-xl border border-slate-300 dark:border-slate-700 flex items-center justify-center gap-2"
+      >
+        <RotateCcw className="w-4 h-4" />
+        Limpar
+      </button>
+
+      {/* ── RESULTADOS ── */}
+      {!pronto && (
+        <div className="bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-4 rounded-xl text-center text-slate-500 dark:text-slate-400 text-sm">
+          Preencha o valor inicial, taxa e período para ver a projeção.
         </div>
       )}
 
-      {resultado && resultado.tipo !== 'ok' && (
-        <div className={`p-4 rounded-2xl border ${resultado.tipo === 'erro' ? 'bg-red-500/10 border-red-500/30 text-red-300' : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300'} text-sm`}>
-          {resultado.texto}
+      {pronto && resultado && (
+        <div className="space-y-4 animate-in fade-in">
+
+          {/* Resumo destaque */}
+          <div className="bg-gradient-to-br from-emerald-600/20 to-emerald-800/10 border border-emerald-500/30 p-5 rounded-2xl text-center">
+            <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-1">Valor Final Bruto</p>
+            <p className="text-3xl font-black text-slate-900 dark:text-white font-mono">{fmtBRL(resultado.saldo)}</p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+              em {meses >= 12 ? `${Math.round(meses / 12)} ${Math.round(meses / 12) === 1 ? 'ano' : 'anos'}` : `${meses} meses`}
+            </p>
+          </div>
+
+          {/* Grid de métricas */}
+          <div className="grid grid-cols-2 gap-3">
+            <MetricCard
+              label="Total Investido"
+              value={fmtBRL(resultado.totalAportado)}
+              sub={`inicial + ${meses} aportes`}
+              color="text-slate-900 dark:text-white"
+            />
+            <MetricCard
+              label="Ganho Nominal"
+              value={fmtBRL(resultado.ganhoNominal)}
+              sub={`+${fmtPct((resultado.ganhoNominal / resultado.totalAportado) * 100)} s/ investido`}
+              color="text-blue-500 dark:text-blue-400"
+            />
+            <MetricCard
+              label="Valor Real (pós-inflação)"
+              value={fmtBRL(resultado.saldoReal)}
+              sub={`inflação acumulada: ${fmtPct((resultado.fatorInflacao - 1) * 100)}`}
+              color="text-slate-900 dark:text-white"
+            />
+            <MetricCard
+              label="Ganho Real"
+              value={fmtBRL(resultado.ganhoReal)}
+              sub={`poder de compra real`}
+              color={corGanhoReal}
+            />
+          </div>
+
+          {/* Taxa efetiva */}
+          {unidadeTaxa === 'mes' && (
+            <div className="bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-3 rounded-xl text-[11px] text-slate-500 dark:text-slate-400 flex justify-between">
+              <span>Taxa anual efetiva</span>
+              <span className="font-bold text-slate-700 dark:text-slate-300">{fmtPct((Math.pow(1 + rMes, 12) - 1) * 100, 2)}</span>
+            </div>
+          )}
+
+          {/* Tabela de evolução */}
+          <button
+            onClick={() => setMostrarTabela((v) => !v)}
+            className="w-full flex items-center justify-between bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-4 py-3 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-200 active:scale-95 transition-all"
+          >
+            <span>Evolução {unidadePeriodo === 'anos' ? 'Anual' : 'Mensal'}</span>
+            {mostrarTabela ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+
+          {mostrarTabela && (
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden animate-in fade-in">
+              {/* Cabeçalho */}
+              <div className="grid grid-cols-3 bg-slate-200 dark:bg-slate-700 px-3 py-2">
+                <span className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                  {unidadePeriodo === 'anos' ? 'Ano' : 'Mês'}
+                </span>
+                <span className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider text-center">Saldo Bruto</span>
+                <span className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Valor Real</span>
+              </div>
+              {/* Linhas */}
+              {resultado.pontos.map((p, idx) => (
+                <div
+                  key={p.mes}
+                  className={`grid grid-cols-3 px-3 py-2.5 border-t border-slate-200 dark:border-slate-700/50 ${idx % 2 === 0 ? 'bg-white dark:bg-slate-900/40' : 'bg-slate-50 dark:bg-slate-800/40'}`}
+                >
+                  <span className="text-[12px] font-bold text-slate-700 dark:text-slate-300">
+                    {unidadePeriodo === 'anos' ? `Ano ${p.ano}` : `Mês ${p.mes}`}
+                  </span>
+                  <span className="text-[11px] font-mono text-slate-900 dark:text-white text-center">{fmtBRL(p.saldo)}</span>
+                  <span className={`text-[11px] font-mono text-right ${p.ganhoReal >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'}`}>
+                    {fmtBRL(p.saldoReal)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Nota de rodapé */}
+          <p className="text-[10px] text-slate-400 dark:text-slate-500 text-center leading-relaxed px-2">
+            Simulação para investimentos pré-fixados. Não considera IR, IOF ou taxas de administração.
+          </p>
         </div>
       )}
+    </div>
+  );
+}
 
-      <div className="bg-slate-100/50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-700/50 text-[11px] text-slate-500 leading-relaxed">
-        <span className="font-bold text-slate-500 dark:text-slate-400">Fórmula (Tabela PRICE):</span> Parcela = Valor financiado × Índice ÷ (1 − (1 + Índice)<sup>−Parcelas</sup>)
-      </div>
+// ── Sub-componente cartão de métrica ──────────────────────────────────────────
+
+function MetricCard({ label, value, sub, color }) {
+  return (
+    <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 p-3.5 rounded-xl">
+      <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">{label}</p>
+      <p className={`text-[14px] font-black font-mono leading-tight ${color}`}>{value}</p>
+      {sub && <p className="text-[9px] text-slate-400 dark:text-slate-500 mt-1">{sub}</p>}
     </div>
   );
 }
