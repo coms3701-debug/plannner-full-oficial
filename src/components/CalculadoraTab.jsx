@@ -140,10 +140,10 @@ export function CalculadoraTab() {
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 font-medium text-sm">R$</span>
             <input
-              type="text" inputMode="numeric" placeholder="10.000,00"
+              type="text" inputMode="numeric" placeholder="Ex.: 10.000,00"
               value={valorInicial}
               onChange={(e) => setValorInicial(fmtCurrencyInput(e.target.value))}
-              className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg py-3 pl-9 pr-3 text-slate-900 dark:text-white font-mono text-sm outline-none focus:border-emerald-500"
+              className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg py-3 pl-9 pr-3 text-slate-900 dark:text-white font-mono text-sm outline-none focus:border-emerald-500 placeholder:text-slate-400 dark:placeholder:text-slate-600 placeholder:text-[12px]"
               style={{ minWidth: 0, WebkitAppearance: 'none' }}
             />
           </div>
@@ -157,7 +157,7 @@ export function CalculadoraTab() {
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 font-medium text-sm">R$</span>
             <input
-              type="text" inputMode="numeric" placeholder="1.000,00"
+              type="text" inputMode="numeric" placeholder="Ex.: 1.000,00"
               value={aporteMensal}
               onChange={(e) => setAporteMensal(fmtCurrencyInput(e.target.value))}
               className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg py-3 pl-9 pr-3 text-slate-900 dark:text-white font-mono text-sm outline-none focus:border-emerald-500"
@@ -186,7 +186,7 @@ export function CalculadoraTab() {
           </div>
           <div className="relative">
             <input
-              type="text" inputMode="decimal" placeholder="1,10"
+              type="text" inputMode="decimal" placeholder="Ex.: 1,10"
               value={taxa}
               onChange={(e) => setTaxa(fmtRateInput(e.target.value))}
               className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg py-3 pl-3 pr-8 text-slate-900 dark:text-white font-mono text-sm outline-none focus:border-emerald-500"
@@ -219,7 +219,7 @@ export function CalculadoraTab() {
           </div>
           <div className="relative">
             <input
-              type="text" inputMode="numeric" placeholder={unidadePeriodo === 'anos' ? '5' : '60'}
+              type="text" inputMode="numeric" placeholder={unidadePeriodo === 'anos' ? 'Ex.: 5' : 'Ex.: 60'}
               value={periodo}
               onChange={(e) => setPeriodo(e.target.value.replace(/[^\d]/g, ''))}
               className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg py-3 pl-3 pr-16 text-slate-900 dark:text-white font-mono text-sm outline-none focus:border-emerald-500"
@@ -239,7 +239,7 @@ export function CalculadoraTab() {
           </label>
           <div className="relative">
             <input
-              type="text" inputMode="decimal" placeholder="0,50"
+              type="text" inputMode="decimal" placeholder="Ex.: 0,50"
               value={inflacao}
               onChange={(e) => setInflacao(fmtRateInput(e.target.value))}
               className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg py-3 pl-3 pr-8 text-slate-900 dark:text-white font-mono text-sm outline-none focus:border-emerald-500"
