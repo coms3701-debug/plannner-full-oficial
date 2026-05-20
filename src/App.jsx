@@ -3,7 +3,8 @@ import {
   Home, CheckSquare, Activity, Briefcase, CalendarClock, Plus, Check, ChevronLeft, ChevronRight,
   Trash2, Edit2, X, User, Settings, BellRing, AlertCircle, Clock, GripVertical,
   Cloud, CloudOff, RefreshCw, LogOut, ListTodo, CheckCircle2,
-  Eye, EyeOff, FileText, Download, Upload, CalendarPlus, Calculator, Sun, Moon, SunMoon
+  Eye, EyeOff, FileText, Download, Upload, CalendarPlus, Calculator, Sun, Moon, SunMoon,
+  Flag, Star, ChevronUp, ChevronDown
 } from 'lucide-react';
 
 import { initializeApp } from 'firebase/app';
@@ -27,7 +28,7 @@ import { AuthScreen } from './components/AuthScreen';
 import { CalculadoraTab } from './components/CalculadoraTab';
 import { downloadTaskICS } from './utils/ics';
 
-const APP_VERSION = 'v6.2.0';
+const APP_VERSION = 'v6.3.0';
 
 
 export default function App() {
@@ -137,6 +138,7 @@ export default function App() {
   const safeHabits = typeof habits === 'object' && habits !== null && !Array.isArray(habits) ? habits : {};
   const safeDailyTasks = typeof dailyTasks === 'object' && dailyTasks !== null && !Array.isArray(dailyTasks) ? dailyTasks : {};
   const safePortfolio = typeof portfolio === 'object' && portfolio !== null && !Array.isArray(portfolio) ? portfolio : {};
+  const priorities = (Array.isArray(prioritiesRaw) ? prioritiesRaw : []).filter(p => p && typeof p === 'object' && p.id);
 
   // Estados de Interface
   const [isEditingCategories, setIsEditingCategories] = useState(false);
@@ -158,6 +160,14 @@ export default function App() {
   const [deletePrompt, setDeletePrompt] = useState(null); 
   const [editPrompt, setEditPrompt] = useState(null); 
   const [activeDailyDrag, setActiveDailyDrag] = useState(null);
+
+  // --- PRIORIDADES ---
+  const [prioritiesRaw, setPriorities] = useLocalStorage('planner_v4_priorities', []);
+  const [newPriorityLabel, setNewPriorityLabel] = useState('');
+  const [newPriorityDate, setNewPriorityDate] = useState('');
+  const [showAddPriority, setShowAddPriority] = useState(false);
+  const [activePriorityDrag, setActivePriorityDrag] = useState(null);
+  const draggingPriorityId = useRef(null);
 
   // --- LÓGICA DE SINCRONIZAÇÃO COM A NUVEM ---
   const friendlyFirebaseError = (error) => {
@@ -197,6 +207,7 @@ export default function App() {
         if (data.portfolioUpdateDate) setPortfolioUpdateDate(data.portfolioUpdateDate);
         if (data.prevPortfolioBalance) setPrevPortfolioBalance(data.prevPortfolioBalance);
         if (data.stickyNote !== undefined) setStickyNote(data.stickyNote || '');
+        if (Array.isArray(data.priorities)) setPriorities(data.priorities);
         if (data.lastUpdated) setLocalLastUpdated(data.lastUpdated);
         setSyncStatus('online');
       } else {
@@ -226,7 +237,7 @@ export default function App() {
         data: {
           tasks, taskCategories, habitsList, habits, dailyTasks,
           portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance,
-          stickyNote,
+          stickyNote, priorities,
         }
       };
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -281,6 +292,7 @@ export default function App() {
     if (typeof d.portfolioUpdateDate === 'string') setPortfolioUpdateDate(d.portfolioUpdateDate);
     if (typeof d.prevPortfolioBalance === 'string') setPrevPortfolioBalance(d.prevPortfolioBalance);
     if (typeof d.stickyNote === 'string') setStickyNote(d.stickyNote);
+    if (Array.isArray(d.priorities)) setPriorities(d.priorities);
     setLocalLastUpdated(new Date().toISOString());
     setImportPrompt(null);
     setIsSidebarOpen(false);
@@ -299,7 +311,7 @@ export default function App() {
       await setDoc(docPath, {
         tasks, taskCategories, habitsList, habits, dailyTasks,
         portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance,
-        stickyNote,
+        stickyNote, priorities,
         lastUpdated: now
       }, { merge: true });
       setSyncStatus('online');
@@ -311,7 +323,7 @@ export default function App() {
       setSyncError(friendlyFirebaseError(error));
       return false;
     }
-  }, [tasks, taskCategories, habitsList, habits, dailyTasks, portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance, stickyNote, firebaseUser, isDataLoaded]);
+  }, [tasks, taskCategories, habitsList, habits, dailyTasks, portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance, stickyNote, priorities, firebaseUser, isDataLoaded]);
 
   // Save com debounce (durante uso normal)
   useEffect(() => {
@@ -495,7 +507,9 @@ export default function App() {
   // --- HANDLERS PRINCIPAIS ---
   const confirmDelete = () => {
     if (!deletePrompt) return;
-    if (deletePrompt.type === 'task') {
+    if (deletePrompt.type === 'priority') {
+      setPriorities(prev => (Array.isArray(prev) ? prev : []).filter(p => p.id !== deletePrompt.id));
+    } else if (deletePrompt.type === 'task') {
       setTasks(tasks.filter(t => t.id !== deletePrompt.id));
     } else if (deletePrompt.type === 'habit') {
       setHabitsList(habitsList.filter(h => h.id !== deletePrompt.id));
@@ -514,7 +528,9 @@ export default function App() {
     e.preventDefault();
     if (!editPrompt || !editPrompt.label.trim()) return;
     
-    if (editPrompt.type === 'habit') {
+    if (editPrompt.type === 'priority') {
+      setPriorities(prev => (Array.isArray(prev) ? prev : []).map(p => p.id === editPrompt.id ? { ...p, label: editPrompt.label, dueDate: editPrompt.dueDate || '' } : p));
+    } else if (editPrompt.type === 'habit') {
       setHabitsList(habitsList.map(h => h.id === editPrompt.id ? { ...h, label: editPrompt.label } : h));
     } else if (editPrompt.type === 'category') {
       setTaskCategories(taskCategories.map(c => c.id === editPrompt.id ? { ...c, label: editPrompt.label } : c));
@@ -629,6 +645,80 @@ export default function App() {
     });
   };
 
+  // --- HANDLERS DE PRIORIDADES ---
+  const handleAddPriority = (e) => {
+    e.preventDefault();
+    if (!newPriorityLabel.trim()) return;
+    setPriorities(prev => {
+      const arr = Array.isArray(prev) ? prev : [];
+      return [...arr, { id: Date.now(), label: newPriorityLabel.trim(), dueDate: newPriorityDate, completed: false, completedAt: null }];
+    });
+    setNewPriorityLabel('');
+    setNewPriorityDate('');
+    setShowAddPriority(false);
+    hapticFeedback(30);
+  };
+
+  const togglePriority = (id) => {
+    setPriorities(prev => {
+      const arr = Array.isArray(prev) ? prev : [];
+      return arr.map(p => p.id === id ? { ...p, completed: !p.completed, completedAt: !p.completed ? new Date().toISOString() : null } : p);
+    });
+    hapticFeedback(20);
+  };
+
+  const movePriority = (id, dir) => {
+    setPriorities(prev => {
+      const arr = [...(Array.isArray(prev) ? prev : [])];
+      const pending = arr.filter(p => !p.completed);
+      const done = arr.filter(p => p.completed);
+      const idx = pending.findIndex(p => p.id === id);
+      if (idx < 0) return prev;
+      const newIdx = dir === 'up' ? idx - 1 : idx + 1;
+      if (newIdx < 0 || newIdx >= pending.length) return prev;
+      const temp = pending[idx];
+      pending[idx] = pending[newIdx];
+      pending[newIdx] = temp;
+      hapticFeedback(15);
+      return [...pending, ...done];
+    });
+  };
+
+  const handlePriorityDragStart = (e, id) => {
+    e.stopPropagation();
+    draggingPriorityId.current = id;
+    setActivePriorityDrag(id);
+    hapticFeedback(20);
+  };
+  const handlePriorityDragMove = (e) => {
+    if (!draggingPriorityId.current) return;
+    e.preventDefault();
+    const isMouse = typeof e?.type === 'string' && e.type.includes('mouse');
+    const clientX = isMouse ? e.clientX : (e?.touches?.[0]?.clientX || 0);
+    const clientY = isMouse ? e.clientY : (e?.touches?.[0]?.clientY || 0);
+    const target = document.elementFromPoint(clientX, clientY)?.closest('[data-priority-drag-id]');
+    if (target && target.dataset.priorityDragId !== String(draggingPriorityId.current)) {
+      const targetId = Number(target.dataset.priorityDragId);
+      setPriorities(prev => {
+        const arr = [...(Array.isArray(prev) ? prev : [])];
+        const idx1 = arr.findIndex(p => p && p.id === draggingPriorityId.current);
+        const idx2 = arr.findIndex(p => p && p.id === targetId);
+        if (idx1 >= 0 && idx2 >= 0 && !arr[idx2]?.completed) {
+          const temp = arr[idx1]; arr.splice(idx1, 1); arr.splice(idx2, 0, temp);
+          return arr;
+        }
+        return prev;
+      });
+      hapticFeedback(15);
+    }
+  };
+  const handlePriorityDragEnd = (e) => {
+    e.stopPropagation();
+    if (draggingPriorityId.current) hapticFeedback(20);
+    draggingPriorityId.current = null;
+    setActivePriorityDrag(null);
+  };
+
   const handleAddDailyTask = (e) => {
     e.preventDefault();
     if (!newDailyTask.trim()) return;
@@ -688,104 +778,159 @@ export default function App() {
   };
 
   // --- ECRÃS DE VISUALIZAÇÃO ---
-  const renderDashboard = () => (
-    <div className="animate-in fade-in pb-20 relative space-y-8">
-      <div className="bg-slate-100 dark:bg-slate-800 p-5 rounded-3xl border border-emerald-500/40 shadow-[0_15px_40px_-10px_rgba(16,185,129,0.25)] relative overflow-hidden">
-        <div className="absolute top-0 right-0 -mr-6 -mt-6 w-32 h-32 bg-emerald-500/20 rounded-full blur-2xl pointer-events-none"></div>
-        <div className="relative z-10 flex flex-col justify-center">
-          
-          <div className="flex items-center justify-between mb-1.5">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-400/90 flex items-center gap-1.5"><Briefcase className="w-3.5 h-3.5"/> Total Investido</p>
-            <button onClick={() => { setIsBalanceVisible(!isBalanceVisible); hapticFeedback(10); }} className="p-1.5 text-emerald-400/80 hover:text-emerald-300 transition-colors rounded-full hover:bg-emerald-500/10 active:scale-90">
-              {isBalanceVisible ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+  const renderDashboard = () => {
+    // Ontem
+    const yesterdayObj = new Date(todayObj);
+    yesterdayObj.setDate(yesterdayObj.getDate() - 1);
+    const yesterdayStr = getLocalYYYYMMDD(yesterdayObj);
+
+    // Foco do Dia ordenado: ativos no topo, concluídos no fim
+    const activeDayTasks = dayTasksForDashboard.filter(t => t && t.id && !t.completed);
+    const completedDayTasks = dayTasksForDashboard.filter(t => t && t.id && t.completed);
+    const sortedDayTasks = [...activeDayTasks, ...completedDayTasks];
+
+    // Prioridades ordenadas: ativas no topo, concluídas no fim
+    const activePriorities = priorities.filter(p => !p.completed);
+    const completedPriorities = priorities.filter(p => p.completed);
+
+    return (
+      <div className="animate-in fade-in pb-20 relative space-y-6">
+
+        {/* ── PRIORIDADES ── */}
+        <div>
+          <div className="flex items-center justify-between mb-3 px-1">
+            <h2 className="text-sm font-bold uppercase tracking-widest text-amber-400 flex items-center gap-2">
+              <Flag className="w-4 h-4" /> Prioridades
+            </h2>
+            <button
+              onClick={() => { setActiveTab('routine'); hapticFeedback(20); }}
+              className="text-[10px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-2 py-1 rounded-lg"
+            >
+              Editar
             </button>
           </div>
-          
-          <p className="text-3xl sm:text-4xl font-bold font-mono tracking-tighter break-words text-slate-900 dark:text-white drop-shadow-md">
-            {isBalanceVisible ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(currentPortfolioTotal) : 'R$ •••••'}
-          </p>
+
+          {activePriorities.length === 0 && completedPriorities.length === 0 ? (
+            <div className="bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-4 rounded-xl text-center shadow-sm">
+              <p className="text-slate-600 dark:text-slate-400 font-medium text-sm">Sem prioridades definidas. Adicione na aba Foco.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {activePriorities.map(p => (
+                <div key={p.id} className="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-3.5 flex items-center gap-3 shadow-sm">
+                  <button
+                    onClick={() => togglePriority(p.id)}
+                    className="w-6 h-6 shrink-0 rounded-full border-2 border-amber-400/70 flex items-center justify-center active:scale-75 transition-all"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate block">{p.label}</span>
+                    {p.dueDate && (
+                      <span className="text-[10px] text-amber-400/80 font-mono mt-0.5 block">{formatDateLocal(p.dueDate)}</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {completedPriorities.map(p => (
+                <div key={p.id} className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 flex items-center gap-3 opacity-50">
+                  <button
+                    onClick={() => togglePriority(p.id)}
+                    className="w-6 h-6 shrink-0 rounded-full bg-emerald-500 border-2 border-emerald-500 flex items-center justify-center active:scale-75 transition-all"
+                  >
+                    <Check className="w-3.5 h-3.5 text-white" />
+                  </button>
+                  <span className="text-sm text-slate-500 line-through truncate">{p.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── FOCO DO DIA ── */}
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-widest text-blue-400 mb-3 px-1 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4" /> Foco do Dia
+          </h2>
+          {sortedDayTasks.length === 0 ? (
+            <div className="bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-4 rounded-xl text-center shadow-sm">
+              <p className="text-slate-600 dark:text-slate-400 font-medium text-sm">Lista de foco vazia. ✨</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {sortedDayTasks.map(task => {
+                const isDraggingThis = activeDailyDrag === task.id;
+                return (
+                  <div key={task.id} data-daily-drag-id={task.id} className={isDraggingThis ? 'scale-[1.02] shadow-2xl ring-1 ring-blue-500 z-50 rounded-xl' : 'transition-all duration-200'}>
+                    <SwipeableItem
+                      onEdit={() => setEditPrompt({ type: 'dailyTask', id: task.id, label: task.text, originalDateStr: todayStr, dateStr: todayStr, time: task.time || '' })}
+                      onDeleteRequest={() => setDeletePrompt({ type: 'dailyTask', id: task.id, title: task.text, dateStr: todayStr })}
+                      frontClass="bg-slate-100/80 dark:bg-slate-800/80 border-slate-700/80 p-3.5 flex items-center justify-between" wrapperClass="mb-0"
+                    >
+                      <label className="flex items-center gap-3 cursor-pointer flex-1 w-full min-w-0 pr-2">
+                        <div className="relative flex items-center justify-center w-6 h-6 shrink-0">
+                          <input type="checkbox" checked={!!task.completed} onChange={() => toggleDailyTask(todayStr, task.id)} className="peer sr-only"/>
+                          <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all duration-200 active:scale-75 ${task.completed ? 'bg-blue-500 border-blue-500' : 'border-slate-500'}`}>{task.completed && <Check className="w-3.5 h-3.5 text-slate-900 dark:text-white" />}</div>
+                        </div>
+                        <div className="flex flex-col min-w-0">
+                          <span className={`text-sm font-medium truncate transition-colors ${task.completed ? 'text-slate-500 line-through' : 'text-slate-800 dark:text-slate-200'}`}>{task.text}</span>
+                          {(task.time || task.hasReminder) && (
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              {task.time && <span className="text-[10px] text-blue-400 font-mono bg-blue-500/10 px-1 rounded flex items-center gap-0.5"><Clock className="w-2.5 h-2.5"/> {task.time}</span>}
+                              {task.hasReminder && !task.completed && <BellRing className="w-2.5 h-2.5 text-blue-400" />}
+                            </div>
+                          )}
+                        </div>
+                      </label>
+                      {!task.completed && <div className="p-3 -mr-3 cursor-grab text-slate-500 hover:text-blue-400 transition-colors" style={{ touchAction: 'none' }} onTouchStart={(e) => handleDailyDragStart(e, task.id)} onTouchMove={handleDailyDragMove} onTouchEnd={handleDailyDragEnd} onMouseDown={(e) => handleDailyDragStart(e, task.id)} onMouseMove={handleDailyDragMove} onMouseUp={handleDailyDragEnd} onMouseLeave={handleDailyDragEnd}><GripVertical className="w-5 h-5 pointer-events-none" /></div>}
+                    </SwipeableItem>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* ── BLOCO DE NOTAS ── */}
+        <div className="bg-slate-100/80 dark:bg-slate-800/80 p-4 rounded-3xl border border-slate-700/50 shadow-sm relative overflow-hidden group">
+          <div className="absolute top-0 right-0 w-20 h-20 bg-blue-500/5 rounded-full -mr-10 -mt-10 blur-xl pointer-events-none"></div>
+          <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+            <FileText className="w-4 h-4 text-blue-400" /> Bloco de Notas Rápido
+          </h3>
+          <textarea
+            value={stickyNote}
+            onChange={(e) => setStickyNote(e.target.value)}
+            placeholder="Anotações importantes..."
+            className="w-full bg-transparent text-sm text-slate-800 dark:text-slate-200 outline-none resize-none min-h-[80px] placeholder:text-slate-600 focus:placeholder:text-slate-500 transition-colors"
+          />
+        </div>
+
+        {/* ── PRÓXIMOS DIAS ── */}
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-3 px-1 flex items-center gap-2"><CalendarClock className="w-4 h-4" /> Próximos Dias</h2>
+          {dashboardAgendaTasks.length > 0 ? (
+            <div className="space-y-2 opacity-95">
+              {dashboardAgendaTasks.filter(t => t && t.id).map(task => {
+                const status = getTaskStatus(task.dueDate, task.completed);
+                return (
+                  <SwipeableItem key={task.id} onEdit={() => startEditTask(task)} onDeleteRequest={() => setDeletePrompt({ type: 'task', id: task.id, title: task.title })} frontClass={`${getStatusColors(status)} p-4 flex items-center gap-3`} wrapperClass="mb-0">
+                    <button onClick={() => toggleTask(task.id)} className={`w-6 h-6 rounded-md border flex items-center justify-center transition-all duration-300 shrink-0 active:scale-75 ${task.completed ? 'bg-blue-600 border-blue-600' : 'border-slate-500'}`}>{task.completed && <Check className="w-4 h-4 text-slate-900 dark:text-white" />}</button>
+                    <div className="flex-1 min-w-0 pointer-events-none">
+                      <h3 className={`font-medium text-sm truncate transition-colors ${task.completed ? 'line-through text-slate-500' : ''}`}>{task.title}</h3>
+                      {task.description && <p className={`text-[10px] mt-0.5 line-clamp-1 ${task.completed ? 'text-slate-600' : 'text-slate-500 dark:text-slate-400'}`}>{task.description}</p>}
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <p className="text-[11px] opacity-70 font-mono">{formatDateLocal(task.dueDate)} {task.dueTime ? `• ${task.dueTime}` : ''}</p>
+                        {status === 'overdue' && !task.completed && <span className="text-[10px] text-red-400 font-bold uppercase tracking-wider bg-red-500/10 px-1 rounded">Atrasada</span>}
+                        {status === 'today' && !task.completed && <span className="text-[10px] text-blue-400 font-bold uppercase tracking-wider bg-blue-500/10 px-1 rounded">Hoje</span>}
+                      </div>
+                    </div>
+                  </SwipeableItem>
+                );
+              })}
+            </div>
+          ) : <p className="text-sm text-slate-500 italic px-2">Sem tarefas pendentes.</p>}
         </div>
       </div>
-
-      <div className="bg-slate-100/80 dark:bg-slate-800/80 p-4 rounded-3xl border border-slate-700/50 shadow-sm relative overflow-hidden group">
-        <div className="absolute top-0 right-0 w-20 h-20 bg-blue-500/5 rounded-full -mr-10 -mt-10 blur-xl pointer-events-none transition-all group-focus-within:bg-blue-500/10"></div>
-        <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-          <FileText className="w-4 h-4 text-blue-400" /> Bloco de Notas Rápido
-        </h3>
-        <textarea
-          value={stickyNote}
-          onChange={(e) => setStickyNote(e.target.value)}
-          placeholder="Anotações importantes..."
-          className="w-full bg-transparent text-sm text-slate-800 dark:text-slate-200 outline-none resize-none min-h-[80px] placeholder:text-slate-600 focus:placeholder:text-slate-500 transition-colors"
-        />
-      </div>
-
-      <div>
-        <h2 className="text-sm font-bold uppercase tracking-widest text-blue-400 mb-4 px-1 flex items-center gap-2"><AlertCircle className="w-4 h-4" /> Foco do Dia</h2>
-        {dayTasksForDashboard.length === 0 ? (
-          <div className="bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-4 rounded-xl text-center shadow-sm"><p className="text-slate-600 dark:text-slate-400 font-medium text-sm">A sua lista de foco está limpa! ✨</p></div>
-        ) : (
-          <div className="space-y-2">
-            {dayTasksForDashboard.filter(t => t && t.id).map(task => {
-              const isDraggingThis = activeDailyDrag === task.id;
-              const dragClasses = isDraggingThis ? 'scale-[1.02] shadow-2xl shadow-blue-500/20 ring-1 ring-blue-500 z-50 rounded-xl transition-all duration-200' : 'transition-all duration-200';
-              return (
-                <div key={task.id} data-daily-drag-id={task.id} className={dragClasses}>
-                  <SwipeableItem 
-                    onEdit={() => setEditPrompt({ type: 'dailyTask', id: task.id, label: task.text, originalDateStr: todayStr, dateStr: todayStr, time: task.time || '' })} 
-                    onDeleteRequest={() => setDeletePrompt({ type: 'dailyTask', id: task.id, title: task.text, dateStr: todayStr })} 
-                    frontClass="bg-slate-100/80 dark:bg-slate-800/80 border-slate-700/80 p-3.5 flex items-center justify-between" wrapperClass="mb-0"
-                  >
-                    <label className="flex items-center gap-3 cursor-pointer flex-1 w-full min-w-0 pr-2">
-                      <div className="relative flex items-center justify-center w-6 h-6 shrink-0">
-                        <input type="checkbox" checked={!!task.completed} onChange={() => toggleDailyTask(todayStr, task.id)} className="peer sr-only"/>
-                        <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all duration-200 active:scale-75 ${task.completed ? 'bg-blue-500 border-blue-500' : 'border-slate-500'}`}>{task.completed && <Check className="w-3.5 h-3.5 text-slate-900 dark:text-white" />}</div>
-                      </div>
-                      <div className="flex flex-col min-w-0">
-                        <span className={`text-sm font-medium truncate transition-colors ${task.completed ? 'text-slate-500 line-through' : 'text-slate-800 dark:text-slate-200'}`}>{task.text}</span>
-                        {(task.time || task.hasReminder) && (
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            {task.time && <span className="text-[10px] text-blue-400 font-mono tracking-wider bg-blue-500/10 px-1 rounded flex items-center gap-0.5"><Clock className="w-2.5 h-2.5"/> {task.time}</span>}
-                            {task.hasReminder && !task.completed && <BellRing className="w-2.5 h-2.5 text-blue-400" />}
-                          </div>
-                        )}
-                      </div>
-                    </label>
-                    {!task.completed && <div className="p-3 -mr-3 cursor-grab text-slate-500 hover:text-blue-400 transition-colors" style={{ touchAction: 'none' }} onTouchStart={(e) => handleDailyDragStart(e, task.id)} onTouchMove={handleDailyDragMove} onTouchEnd={handleDailyDragEnd} onMouseDown={(e) => handleDailyDragStart(e, task.id)} onMouseMove={handleDailyDragMove} onMouseUp={handleDailyDragEnd} onMouseLeave={handleDailyDragEnd}><GripVertical className="w-5 h-5 pointer-events-none" /></div>}
-                  </SwipeableItem>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
-
-      <div>
-        <h2 className="text-sm font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-4 px-1 flex items-center gap-2"><CalendarClock className="w-4 h-4" /> Próximos Dias</h2>
-        {dashboardAgendaTasks.length > 0 ? (
-          <div className="space-y-2 opacity-95">
-            {dashboardAgendaTasks.filter(t => t && t.id).map(task => {
-              const status = getTaskStatus(task.dueDate, task.completed);
-              return (
-                <SwipeableItem key={task.id} onEdit={() => startEditTask(task)} onDeleteRequest={() => setDeletePrompt({ type: 'task', id: task.id, title: task.title })} frontClass={`${getStatusColors(status)} p-4 flex items-center gap-3`} wrapperClass="mb-0">
-                  <button onClick={() => toggleTask(task.id)} className={`w-6 h-6 rounded-md border flex items-center justify-center transition-all duration-300 shrink-0 active:scale-75 ${task.completed ? 'bg-blue-600 border-blue-600' : 'border-slate-500'}`}>{task.completed && <Check className="w-4 h-4 text-slate-900 dark:text-white" />}</button>
-                  <div className="flex-1 min-w-0 pointer-events-none">
-                    <h3 className={`font-medium text-sm truncate transition-colors ${task.completed ? 'line-through text-slate-500' : ''}`}>{task.title}</h3>
-                    {task.description && <p className={`text-[10px] mt-0.5 line-clamp-1 ${task.completed ? 'text-slate-600' : 'text-slate-500 dark:text-slate-400'}`}>{task.description}</p>}
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <p className="text-[11px] opacity-70 font-mono">{formatDateLocal(task.dueDate)} {task.dueTime ? `• ${task.dueTime}` : ''}</p>
-                      {status === 'overdue' && !task.completed && <span className="text-[10px] text-red-400 font-bold uppercase tracking-wider bg-red-500/10 px-1 rounded">Atrasada</span>}
-                      {status === 'today' && !task.completed && <span className="text-[10px] text-blue-400 font-bold uppercase tracking-wider bg-blue-500/10 px-1 rounded">Hoje</span>}
-                    </div>
-                  </div>
-                </SwipeableItem>
-              );
-            })}
-          </div>
-        ) : <p className="text-sm text-slate-500 italic px-2">Sem tarefas pendentes.</p>}
-      </div>
-    </div>
-  );
+    );
+  };
 
   const renderTasks = () => (
     <div className="space-y-6 animate-in fade-in pb-20">
@@ -914,8 +1059,8 @@ export default function App() {
     const dateStr = getLocalYYYYMMDD(selectedDate);
     const dayHabits = safeHabits[dateStr] || {};
     const dayTasks = (Array.isArray(safeDailyTasks[dateStr]) ? safeDailyTasks[dateStr] : []).filter(t => t && t.id);
-    const totalItems = habitsList.length + dayTasks.length;
-    const completedItems = habitsList.filter(h => dayHabits[h.id]).length + dayTasks.filter(t => t.completed).length;
+    const totalItems = priorities.length + dayTasks.length;
+    const completedItems = priorities.filter(p => p.completed).length + dayTasks.filter(t => t.completed).length;
     const progressPercent = totalItems === 0 ? 0 : Math.round((completedItems / totalItems) * 100);
 
     return (
@@ -971,32 +1116,140 @@ export default function App() {
           </div>
         </div>
 
+        {/* ── PRIORIDADES (substitui Hábitos Fixos) ── */}
         <div className="space-y-3 pt-4 border-t border-slate-200 dark:border-slate-800">
           <div className="flex justify-between items-center px-1">
-            <h2 className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2"><Activity className="w-4 h-4 text-emerald-400" /> Hábitos Fixos</h2>
-            <button onClick={() => setShowAddHabit(!showAddHabit)} className="text-xs font-medium text-blue-400 bg-blue-500/10 px-2 py-1 rounded-md">{showAddHabit ? 'Concluir' : 'Editar'}</button>
+            <h2 className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
+              <Flag className="w-4 h-4 text-amber-400" /> Prioridades
+            </h2>
+            <button
+              onClick={() => setShowAddPriority(!showAddPriority)}
+              className="text-xs font-medium text-amber-400 bg-amber-500/10 px-2 py-1 rounded-md"
+            >
+              {showAddPriority ? 'Fechar' : '+ Adicionar'}
+            </button>
           </div>
-          {showAddHabit && (
-            <form onSubmit={e => { e.preventDefault(); if(newHabitLabel.trim()){ setHabitsList([...habitsList, {id: `hab_${Date.now()}`, label: newHabitLabel.trim()}]); setNewHabitLabel(''); setShowAddHabit(false); } }} className="bg-slate-100 dark:bg-slate-800 p-3.5 rounded-xl border border-slate-300 dark:border-slate-700 mb-4 flex gap-2">
-              <input type="text" required className="flex-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg p-2.5 text-sm text-slate-900 dark:text-white" value={newHabitLabel} onChange={e => setNewHabitLabel(e.target.value)} placeholder="Novo hábito..." />
-              <button type="submit" className="bg-emerald-600 text-slate-900 dark:text-white px-4 rounded-lg text-sm font-medium">Salvar</button>
+
+          {showAddPriority && (
+            <form onSubmit={handleAddPriority} className="bg-slate-100 dark:bg-slate-800 p-3.5 rounded-xl border border-slate-300 dark:border-slate-700 space-y-3">
+              <input
+                type="text" required
+                className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg p-2.5 text-sm text-slate-900 dark:text-white outline-none focus:border-amber-500"
+                value={newPriorityLabel}
+                onChange={e => setNewPriorityLabel(e.target.value)}
+                placeholder="Ex: Renovar contrato, Pagar fatura..."
+              />
+              <div className="flex gap-2 items-center">
+                <div className="flex-1 min-w-0">
+                  <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1 block">Data limite (opcional)</label>
+                  <input
+                    type="date"
+                    value={newPriorityDate}
+                    onChange={e => setNewPriorityDate(e.target.value)}
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg p-2.5 text-sm text-slate-900 dark:text-white outline-none color-scheme-dark"
+                    style={{ minWidth: 0, WebkitAppearance: 'none' }}
+                  />
+                </div>
+                <button type="submit" className="self-end bg-amber-500 hover:bg-amber-400 text-slate-900 px-4 py-2.5 rounded-lg text-sm font-bold">Salvar</button>
+              </div>
             </form>
           )}
+
+          {priorities.length === 0 && !showAddPriority && (
+            <div className="bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-4 rounded-xl text-center">
+              <p className="text-slate-500 text-sm">Sem prioridades. Toque em "+ Adicionar" para criar.</p>
+            </div>
+          )}
+
           <div className="space-y-2">
-            {habitsList.map(habit => {
-              const isDone = !!dayHabits[habit.id];
+            {/* Ativas (arrastáveis) */}
+            {priorities.filter(p => !p.completed).map((p, idx, arr) => {
+              const isDraggingThis = activePriorityDrag === p.id;
               return (
-                <SwipeableItem key={habit.id} frontClass="bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 p-4 flex items-center justify-between" wrapperClass="mb-0" onEdit={() => setEditPrompt({ type: 'habit', id: habit.id, label: habit.label })} onDeleteRequest={() => setDeletePrompt({ type: 'habit', id: habit.id, title: habit.label })}>
-                  <label className="flex items-center gap-4 cursor-pointer flex-1 w-full">
-                    <div className="relative flex items-center justify-center w-8 h-8 shrink-0">
-                      <input type="checkbox" checked={isDone} onChange={() => { setHabits(prev => { const p = prev || {}; return { ...p, [dateStr]: { ...(p[dateStr] || {}), [habit.id]: !p[dateStr]?.[habit.id] } }; }); }} className="peer sr-only" />
-                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${isDone ? 'bg-emerald-500 border-emerald-500' : 'border-slate-500'}`}>{isDone && <Check className="w-4 h-4 text-slate-900 dark:text-white" />}</div>
+                <div
+                  key={p.id}
+                  data-priority-drag-id={p.id}
+                  className={isDraggingThis ? 'scale-[1.02] shadow-2xl ring-1 ring-amber-500 z-50 rounded-xl' : 'transition-all duration-200'}
+                >
+                  <SwipeableItem
+                    onEdit={() => setEditPrompt({ type: 'priority', id: p.id, label: p.label, dueDate: p.dueDate || '' })}
+                    onDeleteRequest={() => setDeletePrompt({ type: 'priority', id: p.id, title: p.label })}
+                    frontClass="bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 p-3.5 flex items-center gap-3"
+                    wrapperClass="mb-0"
+                  >
+                    {/* Checkbox */}
+                    <button
+                      onClick={() => togglePriority(p.id)}
+                      className="w-6 h-6 shrink-0 rounded-full border-2 border-amber-400/70 flex items-center justify-center active:scale-75 transition-all"
+                    />
+                    {/* Conteúdo */}
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium text-slate-800 dark:text-slate-200 block truncate">{p.label}</span>
+                      {p.dueDate && (
+                        <span className="text-[10px] text-amber-400/80 font-mono">{formatDateLocal(p.dueDate)}</span>
+                      )}
                     </div>
-                    <span className={`text-base font-medium ${isDone ? 'text-slate-500 line-through' : 'text-slate-800 dark:text-slate-200'}`}>{habit.label}</span>
-                  </label>
-                </SwipeableItem>
+                    {/* Setas de reposicionamento */}
+                    <div className="flex flex-col gap-0.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => movePriority(p.id, 'up')}
+                        disabled={idx === 0}
+                        className="p-1 text-slate-500 dark:text-slate-400 hover:text-amber-400 disabled:opacity-20 transition-colors"
+                      >
+                        <ChevronUp className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => movePriority(p.id, 'down')}
+                        disabled={idx === arr.length - 1}
+                        className="p-1 text-slate-500 dark:text-slate-400 hover:text-amber-400 disabled:opacity-20 transition-colors"
+                      >
+                        <ChevronDown className="w-4 h-4" />
+                      </button>
+                    </div>
+                    {/* Drag handle */}
+                    <div
+                      className="p-2 cursor-grab text-slate-500 hover:text-amber-400 transition-colors"
+                      style={{ touchAction: 'none' }}
+                      onTouchStart={(e) => handlePriorityDragStart(e, p.id)}
+                      onTouchMove={handlePriorityDragMove}
+                      onTouchEnd={handlePriorityDragEnd}
+                      onMouseDown={(e) => handlePriorityDragStart(e, p.id)}
+                      onMouseMove={handlePriorityDragMove}
+                      onMouseUp={handlePriorityDragEnd}
+                      onMouseLeave={handlePriorityDragEnd}
+                    >
+                      <GripVertical className="w-4 h-4 pointer-events-none" />
+                    </div>
+                  </SwipeableItem>
+                </div>
               );
             })}
+
+            {/* Concluídas */}
+            {priorities.filter(p => p.completed).length > 0 && (
+              <div className="pt-2 border-t border-slate-200 dark:border-slate-700/50 space-y-2">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">Concluídas</p>
+                {priorities.filter(p => p.completed).map(p => (
+                  <SwipeableItem
+                    key={p.id}
+                    onEdit={() => setEditPrompt({ type: 'priority', id: p.id, label: p.label, dueDate: p.dueDate || '' })}
+                    onDeleteRequest={() => setDeletePrompt({ type: 'priority', id: p.id, title: p.label })}
+                    frontClass="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 p-3.5 flex items-center gap-3 opacity-60"
+                    wrapperClass="mb-0"
+                  >
+                    <button
+                      onClick={() => togglePriority(p.id)}
+                      className="w-6 h-6 shrink-0 rounded-full bg-emerald-500 border-2 border-emerald-500 flex items-center justify-center active:scale-75"
+                    >
+                      <Check className="w-3.5 h-3.5 text-white" />
+                    </button>
+                    <span className="text-sm text-slate-500 line-through truncate">{p.label}</span>
+                  </SwipeableItem>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1007,8 +1260,24 @@ export default function App() {
     <div className="space-y-6 animate-in fade-in pb-20">
       <header className="flex justify-between items-start mb-6">
         <div><h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Ativos</h1><p className="text-slate-500 dark:text-slate-400">Distribuição do património.</p></div>
-        <button onClick={() => setIsEditingPortfolioCats(!isEditingPortfolioCats)} className={`p-2 rounded-full ${isEditingPortfolioCats ? 'bg-blue-600 text-slate-900 dark:text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}><Edit2 className="w-5 h-5" /></button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => { setIsBalanceVisible(!isBalanceVisible); hapticFeedback(10); }} className="p-2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 active:scale-90 transition-all">
+            {isBalanceVisible ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
+          </button>
+          <button onClick={() => setIsEditingPortfolioCats(!isEditingPortfolioCats)} className={`p-2 rounded-full ${isEditingPortfolioCats ? 'bg-blue-600 text-slate-900 dark:text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}><Edit2 className="w-5 h-5" /></button>
+        </div>
       </header>
+
+      {/* Total do portfólio com opção de ocultar */}
+      <div className="bg-slate-100 dark:bg-slate-800 p-4 rounded-2xl border border-emerald-500/30 flex items-center justify-between">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-400/90 mb-1">Total Investido</p>
+          <p className="text-2xl font-bold font-mono text-slate-900 dark:text-white">
+            {isBalanceVisible ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(currentPortfolioTotal) : 'R$ •••••'}
+          </p>
+        </div>
+        <Briefcase className="w-8 h-8 text-emerald-400/50" />
+      </div>
 
       <div className="bg-slate-100 dark:bg-slate-800 p-4 rounded-xl border border-slate-300 dark:border-slate-700 flex items-center justify-between">
         <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Data Base</label>
@@ -1037,7 +1306,10 @@ export default function App() {
               <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 truncate">{cat.label}</label>
               <div className="relative">
                 <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 font-medium text-[13px]">R$</span>
-                <input type="text" inputMode="numeric" placeholder="0,00" value={safePortfolio[cat.id] || ''} onChange={e => setPortfolio(prev => ({...prev, [cat.id]: formatCurrencyInput(e.target.value)}))} className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg py-2.5 pl-7 pr-2 text-slate-900 dark:text-white font-mono text-[14px]" />
+                {isBalanceVisible
+                ? <input type="text" inputMode="numeric" placeholder="0,00" value={safePortfolio[cat.id] || ''} onChange={e => setPortfolio(prev => ({...prev, [cat.id]: formatCurrencyInput(e.target.value)}))} className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg py-2.5 pl-7 pr-2 text-slate-900 dark:text-white font-mono text-[14px]" />
+                : <p className="text-slate-500 font-mono text-[14px] pl-7 py-2.5">•••••</p>
+              }
               </div>
             </div>
           ))}
@@ -1184,7 +1456,7 @@ export default function App() {
                 <input ref={fileInputRef} type="file" accept="application/json,.json" onChange={handleImportFile} className="hidden" />
                 <button onClick={handleLogout} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-red-500/10 text-red-400 mt-4"><LogOut className="w-5 h-5 text-red-400" /> <span className="font-medium">Terminar Sessão</span></button>
               </div>
-              <div className="p-4 border-t border-slate-200 dark:border-slate-800"><p className="text-center text-[10px] text-slate-500 uppercase tracking-widest">Planner Full {APP_VERSION} · Calculadora de Investimentos</p></div>
+              <div className="p-4 border-t border-slate-200 dark:border-slate-800"><p className="text-center text-[10px] text-slate-500 uppercase tracking-widest">Planner Full {APP_VERSION} · Prioridades + Investimentos</p></div>
             </div>
           </div>
         )}
@@ -1194,7 +1466,7 @@ export default function App() {
             <div className="bg-slate-100 dark:bg-slate-800 rounded-3xl p-6 w-full max-w-[320px] border border-slate-300 dark:border-slate-700 shadow-2xl">
               <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center mb-4 mx-auto"><Trash2 className="w-6 h-6 text-red-400" /></div>
               <h3 className="text-xl font-bold text-slate-900 dark:text-white text-center mb-2">Atenção</h3>
-              <p className="text-slate-500 dark:text-slate-400 text-center text-sm mb-6">Apagar {deletePrompt.type === 'task' ? 'a tarefa' : deletePrompt.type === 'habit' ? 'o hábito' : 'o item'} "{deletePrompt.title}"?</p>
+              <p className="text-slate-500 dark:text-slate-400 text-center text-sm mb-6">Apagar {deletePrompt.type === 'task' ? 'a tarefa' : deletePrompt.type === 'habit' ? 'o hábito' : deletePrompt.type === 'priority' ? 'a prioridade' : 'o item'} "{deletePrompt.title}"?</p>
               <div className="flex gap-3">
                 <button onClick={() => setDeletePrompt(null)} className="flex-1 py-3 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white font-medium">Cancelar</button>
                 <button onClick={confirmDelete} className="flex-1 py-3 rounded-xl bg-red-600 text-slate-900 dark:text-white font-medium">Excluir</button>
@@ -1229,6 +1501,12 @@ export default function App() {
                   <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Nome</label>
                   <input type="text" required autoFocus className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-3 text-slate-900 dark:text-white outline-none" value={editPrompt.label} onChange={e => setEditPrompt({...editPrompt, label: e.target.value})} />
                 </div>
+                {editPrompt.type === 'priority' && (
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Data limite (opcional)</label>
+                    <input type="date" className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-3 text-slate-900 dark:text-white outline-none color-scheme-dark" style={{ WebkitAppearance: 'none' }} value={editPrompt.dueDate || ''} onChange={e => setEditPrompt({...editPrompt, dueDate: e.target.value})} />
+                  </div>
+                )}
                 {editPrompt.type === 'dailyTask' && (
                   <div className="flex gap-3">
                     <div className="flex-1 min-w-0">
