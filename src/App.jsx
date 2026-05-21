@@ -138,7 +138,6 @@ export default function App() {
   const safeHabits = typeof habits === 'object' && habits !== null && !Array.isArray(habits) ? habits : {};
   const safeDailyTasks = typeof dailyTasks === 'object' && dailyTasks !== null && !Array.isArray(dailyTasks) ? dailyTasks : {};
   const safePortfolio = typeof portfolio === 'object' && portfolio !== null && !Array.isArray(portfolio) ? portfolio : {};
-  const priorities = (Array.isArray(prioritiesRaw) ? prioritiesRaw : []).filter(p => p && typeof p === 'object' && p.id);
 
   // Estados de Interface
   const [isEditingCategories, setIsEditingCategories] = useState(false);
@@ -168,6 +167,7 @@ export default function App() {
   const [showAddPriority, setShowAddPriority] = useState(false);
   const [activePriorityDrag, setActivePriorityDrag] = useState(null);
   const draggingPriorityId = useRef(null);
+  const priorities = (Array.isArray(prioritiesRaw) ? prioritiesRaw : []).filter(p => p && typeof p === 'object' && p.id);
 
   // --- LÓGICA DE SINCRONIZAÇÃO COM A NUVEM ---
   const friendlyFirebaseError = (error) => {
