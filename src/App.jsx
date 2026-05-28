@@ -4,7 +4,7 @@ import {
   Trash2, Edit2, X, User, Settings, BellRing, AlertCircle, Clock, GripVertical,
   Cloud, CloudOff, RefreshCw, LogOut, ListTodo, CheckCircle2,
   Eye, EyeOff, FileText, Download, Upload, CalendarPlus, Calculator, Sun, Moon, SunMoon,
-  Flag, Star, ChevronUp, ChevronDown
+  Flag, Star, ChevronUp, ChevronDown, Wallet
 } from 'lucide-react';
 
 import { initializeApp } from 'firebase/app';
@@ -26,9 +26,10 @@ import { SwipeableItem, SwipeHint } from './components/SwipeableItem';
 import { TabErrorBoundary } from './components/TabErrorBoundary';
 import { AuthScreen } from './components/AuthScreen';
 import { CalculadoraTab } from './components/CalculadoraTab';
+import { FinancasTab } from './components/FinancasTab';
 import { downloadTaskICS } from './utils/ics';
 
-const APP_VERSION = 'v6.3.0';
+const APP_VERSION = 'v6.4.0';
 
 
 export default function App() {
@@ -169,6 +170,12 @@ export default function App() {
   const draggingPriorityId = useRef(null);
   const priorities = (Array.isArray(prioritiesRaw) ? prioritiesRaw : []).filter(p => p && typeof p === 'object' && p.id);
 
+  // --- FINANÇAS ---
+  const [financeCardsRaw, setFinanceCards] = useLocalStorage('planner_v4_financeCards', []);
+  const [financeEntriesRaw, setFinanceEntries] = useLocalStorage('planner_v4_financeEntries', []);
+  const financeCards = Array.isArray(financeCardsRaw) ? financeCardsRaw : [];
+  const financeEntries = Array.isArray(financeEntriesRaw) ? financeEntriesRaw : [];
+
   // --- LÓGICA DE SINCRONIZAÇÃO COM A NUVEM ---
   const friendlyFirebaseError = (error) => {
     const code = error?.code || '';
@@ -208,6 +215,8 @@ export default function App() {
         if (data.prevPortfolioBalance) setPrevPortfolioBalance(data.prevPortfolioBalance);
         if (data.stickyNote !== undefined) setStickyNote(data.stickyNote || '');
         if (Array.isArray(data.priorities)) setPriorities(data.priorities);
+        if (Array.isArray(data.financeCards)) setFinanceCards(data.financeCards);
+        if (Array.isArray(data.financeEntries)) setFinanceEntries(data.financeEntries);
         if (data.lastUpdated) setLocalLastUpdated(data.lastUpdated);
         setSyncStatus('online');
       } else {
@@ -237,7 +246,7 @@ export default function App() {
         data: {
           tasks, taskCategories, habitsList, habits, dailyTasks,
           portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance,
-          stickyNote, priorities,
+          stickyNote, priorities, financeCards, financeEntries,
         }
       };
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -293,6 +302,8 @@ export default function App() {
     if (typeof d.prevPortfolioBalance === 'string') setPrevPortfolioBalance(d.prevPortfolioBalance);
     if (typeof d.stickyNote === 'string') setStickyNote(d.stickyNote);
     if (Array.isArray(d.priorities)) setPriorities(d.priorities);
+    if (Array.isArray(d.financeCards)) setFinanceCards(d.financeCards);
+    if (Array.isArray(d.financeEntries)) setFinanceEntries(d.financeEntries);
     setLocalLastUpdated(new Date().toISOString());
     setImportPrompt(null);
     setIsSidebarOpen(false);
@@ -311,7 +322,7 @@ export default function App() {
       await setDoc(docPath, {
         tasks, taskCategories, habitsList, habits, dailyTasks,
         portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance,
-        stickyNote, priorities,
+        stickyNote, priorities, financeCards, financeEntries,
         lastUpdated: now
       }, { merge: true });
       setSyncStatus('online');
@@ -323,7 +334,7 @@ export default function App() {
       setSyncError(friendlyFirebaseError(error));
       return false;
     }
-  }, [tasks, taskCategories, habitsList, habits, dailyTasks, portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance, stickyNote, priorities, firebaseUser, isDataLoaded]);
+  }, [tasks, taskCategories, habitsList, habits, dailyTasks, portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance, stickyNote, priorities, financeCards, financeEntries, firebaseUser, isDataLoaded]);
 
   // Save com debounce (durante uso normal)
   useEffect(() => {
@@ -1388,15 +1399,16 @@ export default function App() {
             {activeTab === 'dashboard' && renderDashboard()}
             {activeTab === 'tasks' && renderTasks()}
             {activeTab === 'routine' && renderRoutine()}
+            {activeTab === 'financas' && <FinancasTab cards={financeCards} entries={financeEntries} setCards={setFinanceCards} setEntries={setFinanceEntries} />}
             {activeTab === 'calculadora' && <CalculadoraTab />}
             {activeTab === 'portfolio' && renderPortfolio()}
           </TabErrorBoundary>
         </main>
 
-        <nav className="shrink-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 pb-safe pt-2 px-6 flex justify-between items-center w-full z-20">
+        <nav className="shrink-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 pb-safe pt-2 px-3 flex justify-between items-center w-full z-20">
           {[
             { id: 'dashboard', icon: Home, label: 'Início' }, { id: 'tasks', icon: CheckSquare, label: 'Agenda' },
-            { id: 'routine', icon: ListTodo, label: 'Foco' }, { id: 'calculadora', icon: Calculator, label: 'Cálculo' }, { id: 'portfolio', icon: Briefcase, label: 'Ativos' }
+            { id: 'routine', icon: ListTodo, label: 'Foco' }, { id: 'financas', icon: Wallet, label: 'Finanças' }, { id: 'calculadora', icon: Calculator, label: 'Cálculo' }, { id: 'portfolio', icon: Briefcase, label: 'Ativos' }
           ].map(tab => {
             const IconComponent = tab.icon;
             return (
@@ -1456,7 +1468,7 @@ export default function App() {
                 <input ref={fileInputRef} type="file" accept="application/json,.json" onChange={handleImportFile} className="hidden" />
                 <button onClick={handleLogout} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-red-500/10 text-red-400 mt-4"><LogOut className="w-5 h-5 text-red-400" /> <span className="font-medium">Terminar Sessão</span></button>
               </div>
-              <div className="p-4 border-t border-slate-200 dark:border-slate-800"><p className="text-center text-[10px] text-slate-500 uppercase tracking-widest">Planner Full {APP_VERSION} · Prioridades + Investimentos</p></div>
+              <div className="p-4 border-t border-slate-200 dark:border-slate-800"><p className="text-center text-[10px] text-slate-500 uppercase tracking-widest">Planner Full {APP_VERSION} · Finanças + Investimentos</p></div>
             </div>
           </div>
         )}
