@@ -29,7 +29,7 @@ import { CalculadoraTab } from './components/CalculadoraTab';
 import { FinancasTab } from './components/FinancasTab';
 import { downloadTaskICS } from './utils/ics';
 
-const APP_VERSION = 'v6.4.0';
+const APP_VERSION = 'v6.5.0';
 
 
 export default function App() {
@@ -173,8 +173,10 @@ export default function App() {
   // --- FINANÇAS ---
   const [financeCardsRaw, setFinanceCards] = useLocalStorage('planner_v4_financeCards', []);
   const [financeEntriesRaw, setFinanceEntries] = useLocalStorage('planner_v4_financeEntries', []);
+  const [financeCategoriesRaw, setFinanceCategories] = useLocalStorage('planner_v4_financeCategories', {});
   const financeCards = Array.isArray(financeCardsRaw) ? financeCardsRaw : [];
   const financeEntries = Array.isArray(financeEntriesRaw) ? financeEntriesRaw : [];
+  const financeCategories = (financeCategoriesRaw && typeof financeCategoriesRaw === 'object' && !Array.isArray(financeCategoriesRaw)) ? financeCategoriesRaw : {};
 
   // --- LÓGICA DE SINCRONIZAÇÃO COM A NUVEM ---
   const friendlyFirebaseError = (error) => {
@@ -217,6 +219,7 @@ export default function App() {
         if (Array.isArray(data.priorities)) setPriorities(data.priorities);
         if (Array.isArray(data.financeCards)) setFinanceCards(data.financeCards);
         if (Array.isArray(data.financeEntries)) setFinanceEntries(data.financeEntries);
+        if (data.financeCategories && typeof data.financeCategories === 'object' && !Array.isArray(data.financeCategories)) setFinanceCategories(data.financeCategories);
         if (data.lastUpdated) setLocalLastUpdated(data.lastUpdated);
         setSyncStatus('online');
       } else {
@@ -246,7 +249,7 @@ export default function App() {
         data: {
           tasks, taskCategories, habitsList, habits, dailyTasks,
           portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance,
-          stickyNote, priorities, financeCards, financeEntries,
+          stickyNote, priorities, financeCards, financeEntries, financeCategories,
         }
       };
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -304,6 +307,7 @@ export default function App() {
     if (Array.isArray(d.priorities)) setPriorities(d.priorities);
     if (Array.isArray(d.financeCards)) setFinanceCards(d.financeCards);
     if (Array.isArray(d.financeEntries)) setFinanceEntries(d.financeEntries);
+    if (d.financeCategories && typeof d.financeCategories === 'object' && !Array.isArray(d.financeCategories)) setFinanceCategories(d.financeCategories);
     setLocalLastUpdated(new Date().toISOString());
     setImportPrompt(null);
     setIsSidebarOpen(false);
@@ -322,7 +326,7 @@ export default function App() {
       await setDoc(docPath, {
         tasks, taskCategories, habitsList, habits, dailyTasks,
         portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance,
-        stickyNote, priorities, financeCards, financeEntries,
+        stickyNote, priorities, financeCards, financeEntries, financeCategories,
         lastUpdated: now
       }, { merge: true });
       setSyncStatus('online');
@@ -334,7 +338,7 @@ export default function App() {
       setSyncError(friendlyFirebaseError(error));
       return false;
     }
-  }, [tasks, taskCategories, habitsList, habits, dailyTasks, portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance, stickyNote, priorities, financeCards, financeEntries, firebaseUser, isDataLoaded]);
+  }, [tasks, taskCategories, habitsList, habits, dailyTasks, portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance, stickyNote, priorities, financeCards, financeEntries, financeCategories, firebaseUser, isDataLoaded]);
 
   // Save com debounce (durante uso normal)
   useEffect(() => {
@@ -1399,7 +1403,7 @@ export default function App() {
             {activeTab === 'dashboard' && renderDashboard()}
             {activeTab === 'tasks' && renderTasks()}
             {activeTab === 'routine' && renderRoutine()}
-            {activeTab === 'financas' && <FinancasTab cards={financeCards} entries={financeEntries} setCards={setFinanceCards} setEntries={setFinanceEntries} />}
+            {activeTab === 'financas' && <FinancasTab cards={financeCards} entries={financeEntries} categories={financeCategories} setCards={setFinanceCards} setEntries={setFinanceEntries} setCategories={setFinanceCategories} />}
             {activeTab === 'calculadora' && <CalculadoraTab />}
             {activeTab === 'portfolio' && renderPortfolio()}
           </TabErrorBoundary>

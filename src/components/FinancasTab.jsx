@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Wallet, CreditCard, Plus, X, ChevronLeft, ChevronRight, TrendingUp, TrendingDown,
-  CalendarPlus, Check, Clock, Pencil, Trash2, Layers, RefreshCw, Settings2
+  CalendarPlus, Check, Clock, Pencil, Trash2, Layers, RefreshCw, Settings2, CalendarDays
 } from 'lucide-react';
 import { SwipeableItem, SwipeHint } from './SwipeableItem';
 import { formatCurrencyInput, parseCurrencyToNumber } from '../utils/currency';
@@ -16,127 +16,244 @@ const CARD_COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef
 const CATEGORIAS_RECEITA = ['Salário', 'Aposentadoria', 'Aluguel', 'FGTS', 'Investimentos', 'Outros'];
 const CATEGORIAS_DESPESA = ['Cartão', 'Moradia', 'Contas', 'Mercado', 'Transporte', 'Saúde', 'Lazer', 'Outros'];
 
-const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+const WEEKDAYS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
 
-export const FinancasTab = ({ cards = [], entries = [], setCards, setEntries }) => {
+const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+const HORIZONTE_INFINITO = 24; // meses materializados ao criar recorrência infinita
+const BUFFER_INFINITO = 12;    // mantém sempre N meses à frente do mês visível
+
+export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCards, setEntries, setCategories }) => {
   const [mesRef, setMesRef] = useState(currentMonthRef());
+  const [selectedDay, setSelectedDay] = useState(null);
   const [showEntryModal, setShowEntryModal] = useState(false);
   const [showCardModal, setShowCardModal] = useState(false);
   const [editingCard, setEditingCard] = useState(null);
-  const [confirmDel, setConfirmDel] = useState(null); // {tipo:'entry'|'group'|'card', id, grupoId, title}
+  const [editId, setEditId] = useState(null); // lançamento em edição
+  const [confirmDel, setConfirmDel] = useState(null);
+  const [recurringPrompt, setRecurringPrompt] = useState(null); // {action,'pago'|'edit', entryId, grupoId, ...}
+  const [showNovaCat, setShowNovaCat] = useState(false);
+  const [novaCatInput, setNovaCatInput] = useState('');
 
-  // ─── Form state: lançamento ───
   const blankEntry = {
     tipo: 'despesa', descricao: '', valorInput: '', categoria: '',
-    diaVenc: '', cardId: '', parcelas: '1', repetir: '1', lembrete: false,
+    diaVenc: '', cardId: '', parcelas: '1', repeticao: 'unica', qtdeMeses: '', lembrete: false,
   };
   const [form, setForm] = useState(blankEntry);
 
-  // ─── Form state: cartão ───
   const blankCard = { nome: '', diaFechamento: '', diaVencimento: '', cor: CARD_COLORS[0], limite: '' };
   const [cardForm, setCardForm] = useState(blankCard);
 
   const safeEntries = Array.isArray(entries) ? entries.filter(e => e && e.id) : [];
   const safeCards = Array.isArray(cards) ? cards.filter(c => c && c.id) : [];
 
-  // Lançamentos do mês selecionado
-  const mesEntries = useMemo(
-    () => safeEntries.filter(e => e.mesRef === mesRef),
-    [safeEntries, mesRef]
-  );
+  // Reseta filtro de dia ao trocar de mês
+  useEffect(() => { setSelectedDay(null); }, [mesRef]);
+
+  // Materialização contínua de recorrências infinitas: mantém ~12 meses à frente
+  useEffect(() => {
+    setEntries(prev => {
+      const arr = Array.isArray(prev) ? prev : [];
+      const groups = {};
+      arr.forEach(e => { if (e?.recorrenteInfinito && e.grupoId) (groups[e.grupoId] ||= []).push(e); });
+      const target = addMonths(mesRef, BUFFER_INFINITO);
+      const additions = [];
+      Object.entries(groups).forEach(([gid, list]) => {
+        const sorted = [...list].sort((a, b) => a.mesRef.localeCompare(b.mesRef));
+        const tmpl = sorted[sorted.length - 1];
+        const existing = new Set(list.map(e => e.mesRef));
+        let cur = tmpl.mesRef;
+        while (cur < target) {
+          cur = addMonths(cur, 1);
+          if (!existing.has(cur)) {
+            additions.push({ ...tmpl, id: `${gid}_${cur}`, mesRef: cur, status: 'pendente' });
+            existing.add(cur);
+          }
+        }
+      });
+      return additions.length ? [...arr, ...additions] : prev;
+    });
+  }, [mesRef]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Dados do mês ──
+  const mesEntries = useMemo(() => safeEntries.filter(e => e.mesRef === mesRef), [safeEntries, mesRef]);
+  const visivel = (e) => !selectedDay || e.diaVenc === selectedDay;
 
   const receitas = mesEntries.filter(e => e.tipo === 'receita');
   const despesas = mesEntries.filter(e => e.tipo === 'despesa');
+  const receitasVis = receitas.filter(visivel);
+  const despesasVis = despesas.filter(visivel);
 
   const totalReceitas = receitas.reduce((s, e) => s + (e.valor || 0), 0);
   const totalDespesas = despesas.reduce((s, e) => s + (e.valor || 0), 0);
   const saldo = totalReceitas - totalDespesas;
 
-  // Fatura por cartão (despesas com cardId no mês)
   const faturasPorCartao = useMemo(() => {
     return safeCards.map(card => {
       const itens = despesas.filter(e => e.cardId === card.id);
       const total = itens.reduce((s, e) => s + (e.valor || 0), 0);
       const pago = itens.filter(e => e.status === 'pago').reduce((s, e) => s + (e.valor || 0), 0);
       return { card, itens, total, pago, pendente: total - pago };
-    }).filter(f => f.total > 0 || f.itens.length > 0);
+    }).filter(f => f.itens.length > 0);
   }, [safeCards, despesas]);
 
-  // ─── Handlers ───
+  // ── Calendário do mês ──
+  const calData = useMemo(() => {
+    const [y, m] = mesRef.split('-').map(Number);
+    const firstWeekday = new Date(y, m - 1, 1).getDay();
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const countByDay = {};
+    mesEntries.forEach(e => { if (e.diaVenc) countByDay[e.diaVenc] = (countByDay[e.diaVenc] || 0) + 1; });
+    return { firstWeekday, daysInMonth, countByDay };
+  }, [mesRef, mesEntries]);
+
+  // ── Categorias (defaults + custom, alfabético) ──
+  const catList = (tipo) => {
+    const base = tipo === 'receita' ? CATEGORIAS_RECEITA : CATEGORIAS_DESPESA;
+    const custom = (categories && Array.isArray(categories[tipo])) ? categories[tipo] : [];
+    return Array.from(new Set([...base, ...custom])).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  };
+
+  const addCategoria = () => {
+    const label = novaCatInput.trim();
+    if (!label) return;
+    setCategories(prev => {
+      const safe = (prev && typeof prev === 'object' && !Array.isArray(prev)) ? prev : {};
+      const list = Array.isArray(safe[form.tipo]) ? safe[form.tipo] : [];
+      if (list.some(c => c.toLowerCase() === label.toLowerCase())) return safe;
+      return { ...safe, [form.tipo]: [...list, label] };
+    });
+    setForm(f => ({ ...f, categoria: label }));
+    setNovaCatInput('');
+    setShowNovaCat(false);
+  };
+
+  // ── Handlers ──
   const goMonth = (delta) => setMesRef(prev => addMonths(prev, delta));
 
-  const togglePago = (id) => {
-    setEntries(prev => (Array.isArray(prev) ? prev : []).map(e =>
-      e.id === id ? { ...e, status: e.status === 'pago' ? 'pendente' : 'pago' } : e
-    ));
+  const togglePago = (entry) => {
+    const novoStatus = entry.status === 'pago' ? 'pendente' : 'pago';
+    if (entry.grupoId && entry.recorrente) {
+      setRecurringPrompt({ action: 'pago', entryId: entry.id, grupoId: entry.grupoId, novoStatus, title: entry.descricao });
+      return;
+    }
+    setEntries(prev => (Array.isArray(prev) ? prev : []).map(e => e.id === entry.id ? { ...e, status: novoStatus } : e));
+  };
+
+  const applyPago = (scope) => {
+    const { entryId, grupoId, novoStatus } = recurringPrompt;
+    setEntries(prev => (Array.isArray(prev) ? prev : []).map(e => {
+      if (scope === 'all' ? e.grupoId === grupoId : e.id === entryId) return { ...e, status: novoStatus };
+      return e;
+    }));
+    setRecurringPrompt(null);
+  };
+
+  const openCreate = () => {
+    setEditId(null);
+    setForm(blankEntry);
+    setShowNovaCat(false);
+    setShowEntryModal(true);
+  };
+
+  const openEdit = (entry) => {
+    setEditId(entry.id);
+    setForm({
+      tipo: entry.tipo,
+      descricao: entry.descricao || '',
+      valorInput: formatCurrencyInput(String(Math.round((entry.valor || 0) * 100))),
+      categoria: entry.categoria || '',
+      diaVenc: entry.diaVenc ? String(entry.diaVenc) : '',
+      cardId: entry.cardId || '',
+      parcelas: entry.parcela ? String(entry.parcela.total) : '1',
+      repeticao: entry.recorrente ? 'mensal' : 'unica',
+      qtdeMeses: '',
+      lembrete: !!entry.lembrete,
+    });
+    setShowNovaCat(false);
+    setShowEntryModal(true);
   };
 
   const handleSaveEntry = () => {
     const valor = parseCurrencyToNumber(form.valorInput);
     if (!form.descricao.trim() || valor <= 0) return;
-
     const tipo = form.tipo;
-    const diaVenc = Math.min(31, Math.max(1, parseInt(form.diaVenc, 10) || 1));
+    const diaVenc = form.diaVenc ? Math.min(31, Math.max(1, parseInt(form.diaVenc, 10) || 1)) : null;
     const categoria = form.categoria || (tipo === 'receita' ? 'Outros' : (form.cardId ? 'Cartão' : 'Outros'));
+
+    // ── EDIÇÃO ──
+    if (editId) {
+      const entry = safeEntries.find(e => e.id === editId);
+      if (!entry) { setShowEntryModal(false); return; }
+      const changes = { descricao: form.descricao.trim(), valor, categoria, diaVenc, cardId: form.cardId || null, lembrete: form.lembrete };
+      if (entry.grupoId && entry.recorrente) {
+        setRecurringPrompt({ action: 'edit', entryId: editId, grupoId: entry.grupoId, changes, title: entry.descricao });
+        return; // o modal de edição permanece até escolher escopo
+      }
+      setEntries(prev => (Array.isArray(prev) ? prev : []).map(e => e.id === editId ? { ...e, ...changes } : e));
+      closeEntryModal();
+      return;
+    }
+
+    // ── CRIAÇÃO ──
     const grupoId = `g_${Date.now()}`;
     const baseId = Date.now();
     const novos = [];
-
     const isCartao = tipo === 'despesa' && form.cardId;
     const nParcelas = isCartao ? Math.max(1, parseInt(form.parcelas, 10) || 1) : 1;
-    const nRepetir = !isCartao ? Math.max(1, parseInt(form.repetir, 10) || 1) : 1;
 
     if (isCartao) {
-      // Compra parcelada no cartão: divide o total entre N parcelas, materializa nos meses da fatura
       const card = safeCards.find(c => c.id === form.cardId);
       const valores = dividirParcelas(valor, nParcelas);
-      // mês da 1ª fatura usa o fechamento real do cartão; base = 1º dia do mês selecionado
-      const dataCompra = `${mesRef}-${String(diaVenc).padStart(2, '0')}`;
+      const diaBase = diaVenc || (card ? parseInt(card.diaVencimento, 10) : 1) || 1;
+      const dataCompra = `${mesRef}-${String(diaBase).padStart(2, '0')}`;
       const primeiroMes = card
-        ? primeiraFaturaMes(dataCompra, parseInt(card.diaFechamento, 10) || 1, parseInt(card.diaVencimento, 10) || diaVenc)
+        ? primeiraFaturaMes(dataCompra, parseInt(card.diaFechamento, 10) || 1, parseInt(card.diaVencimento, 10) || diaBase)
         : mesRef;
-      const diaVencFatura = card ? (parseInt(card.diaVencimento, 10) || diaVenc) : diaVenc;
+      const diaVencFatura = card ? (parseInt(card.diaVencimento, 10) || diaBase) : diaBase;
       for (let i = 0; i < nParcelas; i++) {
         novos.push({
-          id: `${baseId}_${i}`,
-          tipo: 'despesa',
-          descricao: form.descricao.trim(),
-          valor: valores[i],
-          categoria,
-          mesRef: addMonths(primeiroMes, i),
-          diaVenc: diaVencFatura,
-          status: 'pendente',
-          recorrente: false,
-          lembrete: form.lembrete,
-          cardId: form.cardId,
+          id: `${baseId}_${i}`, tipo: 'despesa', descricao: form.descricao.trim(), valor: valores[i],
+          categoria, mesRef: addMonths(primeiroMes, i), diaVenc: diaVencFatura, status: 'pendente',
+          recorrente: false, recorrenteInfinito: false, lembrete: form.lembrete, cardId: form.cardId,
           parcela: nParcelas > 1 ? { atual: i + 1, total: nParcelas } : null,
           grupoId: nParcelas > 1 ? grupoId : null,
         });
       }
     } else {
-      // Receita ou despesa avulsa/recorrente: mesmo valor repetido N meses
-      for (let i = 0; i < nRepetir; i++) {
+      const recorrente = form.repeticao === 'mensal';
+      const qtde = parseInt(form.qtdeMeses, 10);
+      const infinito = recorrente && (!form.qtdeMeses || isNaN(qtde) || qtde < 1);
+      const nMeses = !recorrente ? 1 : (infinito ? HORIZONTE_INFINITO : qtde);
+      for (let i = 0; i < nMeses; i++) {
+        const mRef = addMonths(mesRef, i);
         novos.push({
-          id: `${baseId}_${i}`,
-          tipo,
-          descricao: form.descricao.trim(),
-          valor,
-          categoria,
-          mesRef: addMonths(mesRef, i),
-          diaVenc,
-          status: 'pendente',
-          recorrente: nRepetir > 1,
-          lembrete: form.lembrete,
-          cardId: null,
-          parcela: null,
-          grupoId: nRepetir > 1 ? grupoId : null,
+          id: recorrente ? `${grupoId}_${mRef}` : `${baseId}`, tipo, descricao: form.descricao.trim(), valor,
+          categoria, mesRef: mRef, diaVenc, status: 'pendente', recorrente, recorrenteInfinito: infinito,
+          lembrete: form.lembrete, cardId: null, parcela: null, grupoId: recorrente ? grupoId : null,
         });
       }
     }
 
     setEntries(prev => [...(Array.isArray(prev) ? prev : []), ...novos]);
-    setForm(blankEntry);
+    closeEntryModal();
+  };
+
+  const applyEdit = (scope) => {
+    const { entryId, grupoId, changes } = recurringPrompt;
+    setEntries(prev => (Array.isArray(prev) ? prev : []).map(e => {
+      if (scope === 'all' ? e.grupoId === grupoId : e.id === entryId) return { ...e, ...changes };
+      return e;
+    }));
+    setRecurringPrompt(null);
+    closeEntryModal();
+  };
+
+  const closeEntryModal = () => {
     setShowEntryModal(false);
+    setEditId(null);
+    setForm(blankEntry);
+    setShowNovaCat(false);
+    setNovaCatInput('');
   };
 
   const handleSaveCard = () => {
@@ -200,26 +317,26 @@ export const FinancasTab = ({ cards = [], entries = [], setCards, setEntries }) 
   const requestDeleteEntry = (entry) => {
     if (entry.grupoId) {
       const grp = safeEntries.filter(e => e.grupoId === entry.grupoId);
-      setConfirmDel({ tipo: 'group', grupoId: entry.grupoId, title: entry.descricao, count: grp.length });
+      setConfirmDel({ tipo: 'group', grupoId: entry.grupoId, title: entry.descricao, count: grp.length, recorrente: entry.recorrente });
     } else {
       setConfirmDel({ tipo: 'entry', id: entry.id, title: entry.descricao });
     }
   };
 
-  // ─── Render helpers ───
+  // ── Linha de lançamento ──
   const EntryRow = ({ entry }) => {
     const isReceita = entry.tipo === 'receita';
     const card = entry.cardId ? safeCards.find(c => c.id === entry.cardId) : null;
     const pago = entry.status === 'pago';
     return (
       <SwipeableItem
-        onEdit={() => addToCalendar(entry)}
+        onEdit={() => openEdit(entry)}
         onDeleteRequest={() => requestDeleteEntry(entry)}
         wrapperClass="mb-0"
         frontClass={`p-3 flex items-center gap-3 border-slate-200 dark:border-slate-700 ${pago ? 'bg-white dark:bg-slate-900 opacity-60' : 'bg-slate-100 dark:bg-slate-800'}`}
       >
         <button
-          onClick={() => togglePago(entry.id)}
+          onClick={() => togglePago(entry)}
           className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-90 ${pago ? 'bg-emerald-500 text-white' : 'border-2 border-slate-300 dark:border-slate-600 text-transparent'}`}
         >
           <Check className="w-4 h-4" strokeWidth={3} />
@@ -240,16 +357,23 @@ export const FinancasTab = ({ cards = [], entries = [], setCards, setEntries }) 
             {entry.recorrente && <RefreshCw className="w-2.5 h-2.5 text-slate-400" />}
           </div>
         </div>
-        <div className={`font-bold text-sm shrink-0 ${isReceita ? 'text-emerald-500' : 'text-rose-500'}`}>
-          {isReceita ? '+' : '−'}{fmtBRL(entry.valor)}
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          <div className={`font-bold text-sm ${isReceita ? 'text-emerald-500' : 'text-rose-500'}`}>
+            {isReceita ? '+' : '−'}{fmtBRL(entry.valor)}
+          </div>
+          <button onClick={() => addToCalendar(entry)} className="text-slate-400 hover:text-indigo-500 active:scale-90 transition-all">
+            <CalendarPlus className="w-4 h-4" />
+          </button>
         </div>
       </SwipeableItem>
     );
   };
 
+  const inputCls = "w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-slate-900 dark:text-white outline-none";
+
   return (
     <div className="space-y-5 pb-4">
-      {/* Cabeçalho + navegador de mês */}
+      {/* Cabeçalho */}
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
           <Wallet className="w-6 h-6 text-indigo-500" /> Finanças
@@ -262,6 +386,7 @@ export const FinancasTab = ({ cards = [], entries = [], setCards, setEntries }) 
         </button>
       </div>
 
+      {/* Navegador de mês */}
       <div className="flex items-center justify-between bg-slate-100 dark:bg-slate-800 rounded-2xl p-2">
         <button onClick={() => goMonth(-1)} className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-600 dark:text-slate-300 active:scale-90 transition-all hover:bg-slate-200 dark:hover:bg-slate-700">
           <ChevronLeft className="w-5 h-5" />
@@ -273,6 +398,47 @@ export const FinancasTab = ({ cards = [], entries = [], setCards, setEntries }) 
         <button onClick={() => goMonth(1)} className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-600 dark:text-slate-300 active:scale-90 transition-all hover:bg-slate-200 dark:hover:bg-slate-700">
           <ChevronRight className="w-5 h-5" />
         </button>
+      </div>
+
+      {/* Calendário do mês */}
+      <div className="bg-slate-100 dark:bg-slate-800 rounded-2xl p-3">
+        <div className="grid grid-cols-7 gap-1 mb-1">
+          {WEEKDAYS.map((w, i) => (
+            <div key={i} className="text-center text-[10px] font-bold uppercase text-slate-400">{w}</div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-1">
+          {Array.from({ length: calData.firstWeekday }).map((_, i) => <div key={`e${i}`} />)}
+          {Array.from({ length: calData.daysInMonth }).map((_, i) => {
+            const d = i + 1;
+            const count = calData.countByDay[d] || 0;
+            const isSel = selectedDay === d;
+            return (
+              <button
+                key={d}
+                onClick={() => setSelectedDay(isSel ? null : (count ? d : null))}
+                disabled={!count && !isSel}
+                className={`relative aspect-square rounded-lg flex flex-col items-center justify-center text-xs transition-all ${
+                  isSel ? 'bg-indigo-600 text-white font-bold'
+                  : count ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-semibold active:scale-90'
+                  : 'text-slate-400 dark:text-slate-600'
+                }`}
+              >
+                <span>{d}</span>
+                {count > 0 && (
+                  <span className={`mt-0.5 text-[8px] font-bold leading-none px-1 py-0.5 rounded-full ${isSel ? 'bg-white/25 text-white' : 'bg-rose-500/20 text-rose-500'}`}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        {selectedDay && (
+          <button onClick={() => setSelectedDay(null)} className="mt-2 w-full text-center text-xs font-semibold text-indigo-500 py-1.5 rounded-lg bg-indigo-500/10">
+            Mostrando vencimentos do dia {selectedDay} · toque para limpar
+          </button>
+        )}
       </div>
 
       {/* Resumo */}
@@ -291,7 +457,7 @@ export const FinancasTab = ({ cards = [], entries = [], setCards, setEntries }) 
         </div>
       </div>
 
-      {/* Faturas dos cartões */}
+      {/* Faturas */}
       {faturasPorCartao.length > 0 && (
         <div className="space-y-2">
           <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 flex items-center gap-1.5"><CreditCard className="w-3.5 h-3.5" />Faturas</h3>
@@ -322,53 +488,51 @@ export const FinancasTab = ({ cards = [], entries = [], setCards, setEntries }) 
         </div>
       )}
 
-      {/* Lista de lançamentos */}
       {mesEntries.length > 0 && <SwipeHint />}
 
-      {receitas.length > 0 && (
+      {receitasVis.length > 0 && (
         <div className="space-y-2">
           <h3 className="text-xs font-bold uppercase tracking-widest text-emerald-500 flex items-center gap-1.5"><TrendingUp className="w-3.5 h-3.5" />Receitas</h3>
-          {receitas.map(e => <EntryRow key={e.id} entry={e} />)}
+          {receitasVis.map(e => <EntryRow key={e.id} entry={e} />)}
         </div>
       )}
 
-      {despesas.length > 0 && (
+      {despesasVis.length > 0 && (
         <div className="space-y-2">
           <h3 className="text-xs font-bold uppercase tracking-widest text-rose-500 flex items-center gap-1.5"><TrendingDown className="w-3.5 h-3.5" />Despesas</h3>
-          {despesas.map(e => <EntryRow key={e.id} entry={e} />)}
+          {despesasVis.map(e => <EntryRow key={e.id} entry={e} />)}
         </div>
       )}
 
-      {mesEntries.length === 0 && (
+      {(selectedDay ? (receitasVis.length + despesasVis.length === 0) : (mesEntries.length === 0)) && (
         <div className="text-center py-12 text-slate-400 dark:text-slate-600">
-          <Layers className="w-12 h-12 mx-auto mb-3 opacity-40" />
-          <p className="text-sm">Nenhum lançamento em {cap(formatMonthLabel(mesRef))}.</p>
-          <p className="text-xs mt-1">Toque em + para adicionar.</p>
+          {selectedDay ? <CalendarDays className="w-12 h-12 mx-auto mb-3 opacity-40" /> : <Layers className="w-12 h-12 mx-auto mb-3 opacity-40" />}
+          <p className="text-sm">{selectedDay ? `Nenhum vencimento no dia ${selectedDay}.` : `Nenhum lançamento em ${cap(formatMonthLabel(mesRef))}.`}</p>
+          {!selectedDay && <p className="text-xs mt-1">Toque em + para adicionar.</p>}
         </div>
       )}
 
-      {/* FAB adicionar */}
+      {/* FAB */}
       <button
-        onClick={() => { setForm(blankEntry); setShowEntryModal(true); }}
+        onClick={openCreate}
         className="fixed bottom-24 right-5 z-30 w-14 h-14 rounded-full bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 flex items-center justify-center active:scale-90 transition-all"
       >
         <Plus className="w-7 h-7" />
       </button>
 
-      {/* ─── Modal: novo lançamento ─── */}
+      {/* ── Modal lançamento (criar/editar) ── */}
       {showEntryModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowEntryModal(false)}>
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm" onClick={closeEntryModal}>
           <div className="w-full sm:max-w-md bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl p-5 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Novo lançamento</h3>
-              <button onClick={() => setShowEntryModal(false)} className="text-slate-400"><X className="w-5 h-5" /></button>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">{editId ? 'Editar lançamento' : 'Novo lançamento'}</h3>
+              <button onClick={closeEntryModal} className="text-slate-400"><X className="w-5 h-5" /></button>
             </div>
 
-            {/* Tipo */}
             <div className="grid grid-cols-2 gap-2 mb-4">
               {['despesa', 'receita'].map(t => (
                 <button key={t} onClick={() => setForm(f => ({ ...f, tipo: t, categoria: '', cardId: '' }))}
-                  className={`py-2.5 rounded-xl font-semibold text-sm capitalize transition-all ${form.tipo === t ? (t === 'receita' ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white') : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
+                  className={`py-2.5 rounded-xl font-semibold text-sm transition-all ${form.tipo === t ? (t === 'receita' ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white') : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
                   {t === 'receita' ? '＋ Receita' : '－ Despesa'}
                 </button>
               ))}
@@ -376,27 +540,42 @@ export const FinancasTab = ({ cards = [], entries = [], setCards, setEntries }) 
 
             <div className="space-y-3">
               <input type="text" placeholder="Descrição (ex.: Salário, Mercado...)" value={form.descricao}
-                onChange={e => setForm(f => ({ ...f, descricao: e.target.value }))}
-                className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-slate-900 dark:text-white outline-none" />
+                onChange={e => setForm(f => ({ ...f, descricao: e.target.value }))} className={inputCls} />
 
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-medium">R$</span>
                 <input type="text" inputMode="numeric" placeholder="0,00" value={form.valorInput}
                   onChange={e => setForm(f => ({ ...f, valorInput: formatCurrencyInput(e.target.value) }))}
-                  className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 pl-10 text-slate-900 dark:text-white outline-none font-semibold" />
+                  className={`${inputCls} pl-10 font-semibold`} />
               </div>
 
-              {/* Categoria */}
-              <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-                {(form.tipo === 'receita' ? CATEGORIAS_RECEITA : CATEGORIAS_DESPESA).map(c => (
-                  <button key={c} onClick={() => setForm(f => ({ ...f, categoria: c }))}
-                    className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${form.categoria === c ? 'bg-indigo-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
-                    {c}
-                  </button>
-                ))}
+              {/* Categoria — dropdown alfabético + nova */}
+              <div>
+                <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Categoria</label>
+                <select
+                  value={showNovaCat ? '__nova__' : form.categoria}
+                  onChange={e => {
+                    if (e.target.value === '__nova__') { setShowNovaCat(true); }
+                    else { setShowNovaCat(false); setForm(f => ({ ...f, categoria: e.target.value })); }
+                  }}
+                  className={inputCls}
+                >
+                  <option value="" disabled>Selecione...</option>
+                  {catList(form.tipo).map(c => <option key={c} value={c}>{c}</option>)}
+                  <option value="__nova__">＋ Nova categoria...</option>
+                </select>
+                {showNovaCat && (
+                  <div className="flex gap-2 mt-2">
+                    <input type="text" autoFocus placeholder="Nome da nova categoria" value={novaCatInput}
+                      onChange={e => setNovaCatInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCategoria(); } }}
+                      className={inputCls} />
+                    <button onClick={addCategoria} className="px-4 rounded-xl bg-indigo-600 text-white font-semibold text-sm shrink-0">Add</button>
+                  </div>
+                )}
               </div>
 
-              {/* Cartão (só despesa) */}
+              {/* Cartão */}
               {form.tipo === 'despesa' && safeCards.length > 0 && (
                 <div>
                   <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Cartão de crédito (opcional)</label>
@@ -420,49 +599,80 @@ export const FinancasTab = ({ cards = [], entries = [], setCards, setEntries }) 
                 <div>
                   <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Dia venc.</label>
                   <input type="number" min="1" max="31" placeholder="Ex.: 10" value={form.diaVenc}
-                    onChange={e => setForm(f => ({ ...f, diaVenc: e.target.value }))}
-                    className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-slate-900 dark:text-white outline-none" />
+                    onChange={e => setForm(f => ({ ...f, diaVenc: e.target.value }))} className={inputCls} />
                 </div>
-                {/* Parcelas (cartão) ou Repetir (demais) */}
                 {form.tipo === 'despesa' && form.cardId ? (
                   <div>
                     <label className="text-xs font-semibold text-slate-500 mb-1.5 block flex items-center gap-1"><Layers className="w-3 h-3" />Parcelas</label>
                     <input type="number" min="1" max="60" placeholder="Ex.: 12" value={form.parcelas}
-                      onChange={e => setForm(f => ({ ...f, parcelas: e.target.value }))}
-                      className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-slate-900 dark:text-white outline-none" />
+                      onChange={e => setForm(f => ({ ...f, parcelas: e.target.value }))} className={inputCls} disabled={!!editId} />
                   </div>
                 ) : (
                   <div>
-                    <label className="text-xs font-semibold text-slate-500 mb-1.5 block flex items-center gap-1"><RefreshCw className="w-3 h-3" />Repetir (meses)</label>
-                    <input type="number" min="1" max="60" placeholder="Ex.: 12" value={form.repetir}
-                      onChange={e => setForm(f => ({ ...f, repetir: e.target.value }))}
-                      className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-slate-900 dark:text-white outline-none" />
+                    <label className="text-xs font-semibold text-slate-500 mb-1.5 block flex items-center gap-1"><RefreshCw className="w-3 h-3" />Repetição</label>
+                    <select value={form.repeticao} onChange={e => setForm(f => ({ ...f, repeticao: e.target.value }))} className={inputCls} disabled={!!editId}>
+                      <option value="unica">Única</option>
+                      <option value="mensal">Mensal</option>
+                    </select>
                   </div>
                 )}
               </div>
 
-              {/* Preview parcelas */}
-              {form.tipo === 'despesa' && form.cardId && parseInt(form.parcelas, 10) > 1 && parseCurrencyToNumber(form.valorInput) > 0 && (
+              {/* Qtde de meses (mensal, sem cartão) */}
+              {!editId && form.repeticao === 'mensal' && !(form.tipo === 'despesa' && form.cardId) && (
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Qtde de meses (vazio = infinito ∞)</label>
+                  <input type="number" min="1" max="120" placeholder="Ex.: 12 — deixe vazio para infinito" value={form.qtdeMeses}
+                    onChange={e => setForm(f => ({ ...f, qtdeMeses: e.target.value }))} className={inputCls} />
+                </div>
+              )}
+
+              {/* Previews */}
+              {!editId && form.tipo === 'despesa' && form.cardId && parseInt(form.parcelas, 10) > 1 && parseCurrencyToNumber(form.valorInput) > 0 && (
                 <p className="text-xs text-slate-500 bg-slate-100 dark:bg-slate-800 rounded-xl p-2.5">
-                  {form.parcelas}× de aprox. <span className="font-bold text-indigo-500">{fmtBRL(parseCurrencyToNumber(form.valorInput) / parseInt(form.parcelas, 10))}</span>, lançadas automaticamente nas faturas a partir de {cap(formatMonthLabel(mesRef))}.
+                  {form.parcelas}× de aprox. <span className="font-bold text-indigo-500">{fmtBRL(parseCurrencyToNumber(form.valorInput) / parseInt(form.parcelas, 10))}</span>, lançadas nas faturas a partir de {cap(formatMonthLabel(mesRef))}.
                 </p>
               )}
-              {(!form.cardId || form.tipo === 'receita') && parseInt(form.repetir, 10) > 1 && (
+              {!editId && form.repeticao === 'mensal' && !(form.tipo === 'despesa' && form.cardId) && parseCurrencyToNumber(form.valorInput) > 0 && (
                 <p className="text-xs text-slate-500 bg-slate-100 dark:bg-slate-800 rounded-xl p-2.5">
-                  Repetido por {form.repetir} meses ({fmtBRL(parseCurrencyToNumber(form.valorInput))}/mês).
+                  {fmtBRL(parseCurrencyToNumber(form.valorInput))}/mês {form.qtdeMeses && parseInt(form.qtdeMeses, 10) >= 1 ? `por ${form.qtdeMeses} meses` : 'por tempo indeterminado (∞)'}, a partir de {cap(formatMonthLabel(mesRef))}.
                 </p>
               )}
 
-              <button onClick={handleSaveEntry}
-                className="w-full py-3.5 rounded-xl bg-indigo-600 text-white font-bold active:scale-95 transition-all mt-1">
-                Salvar lançamento
+              <button onClick={handleSaveEntry} className="w-full py-3.5 rounded-xl bg-indigo-600 text-white font-bold active:scale-95 transition-all mt-1">
+                {editId ? 'Salvar alterações' : 'Salvar lançamento'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ─── Modal: gerir cartões ─── */}
+      {/* ── Modal escopo recorrência (pago/edit) ── */}
+      {recurringPrompt && (
+        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setRecurringPrompt(null)}>
+          <div className="w-full sm:max-w-sm bg-white dark:bg-slate-900 rounded-3xl p-5" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">
+              {recurringPrompt.action === 'pago' ? (recurringPrompt.novoStatus === 'pago' ? 'Marcar como pago' : 'Marcar como pendente') : 'Salvar alterações'}
+            </h3>
+            <p className="text-sm text-slate-500 mb-5">"{recurringPrompt.title}" é recorrente. Aplicar a:</p>
+            <div className="space-y-2">
+              <button
+                onClick={() => recurringPrompt.action === 'pago' ? applyPago('one') : applyEdit('one')}
+                className="w-full py-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-semibold">
+                Somente esta
+              </button>
+              <button
+                onClick={() => recurringPrompt.action === 'pago' ? applyPago('all') : applyEdit('all')}
+                className="w-full py-3 rounded-xl bg-indigo-600 text-white font-bold">
+                Todas as recorrências
+              </button>
+              <button onClick={() => setRecurringPrompt(null)} className="w-full py-2.5 text-slate-500 font-medium text-sm">Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal cartões ── */}
       {showCardModal && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => { setShowCardModal(false); setEditingCard(null); }}>
           <div className="w-full sm:max-w-md bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl p-5 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
@@ -471,7 +681,6 @@ export const FinancasTab = ({ cards = [], entries = [], setCards, setEntries }) 
               <button onClick={() => { setShowCardModal(false); setEditingCard(null); }} className="text-slate-400"><X className="w-5 h-5" /></button>
             </div>
 
-            {/* Lista de cartões existentes */}
             {!editingCard && safeCards.length > 0 && (
               <div className="space-y-2 mb-4">
                 {safeCards.map(c => (
@@ -488,34 +697,27 @@ export const FinancasTab = ({ cards = [], entries = [], setCards, setEntries }) 
               </div>
             )}
 
-            {/* Form */}
             <div className="space-y-3">
               <input type="text" placeholder="Nome do cartão (ex.: Nubank)" value={cardForm.nome}
-                onChange={e => setCardForm(f => ({ ...f, nome: e.target.value }))}
-                className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-slate-900 dark:text-white outline-none" />
-
+                onChange={e => setCardForm(f => ({ ...f, nome: e.target.value }))} className={inputCls} />
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Dia fechamento</label>
                   <input type="number" min="1" max="31" placeholder="Ex.: 28" value={cardForm.diaFechamento}
-                    onChange={e => setCardForm(f => ({ ...f, diaFechamento: e.target.value }))}
-                    className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-slate-900 dark:text-white outline-none" />
+                    onChange={e => setCardForm(f => ({ ...f, diaFechamento: e.target.value }))} className={inputCls} />
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Dia vencimento</label>
                   <input type="number" min="1" max="31" placeholder="Ex.: 10" value={cardForm.diaVencimento}
-                    onChange={e => setCardForm(f => ({ ...f, diaVencimento: e.target.value }))}
-                    className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-slate-900 dark:text-white outline-none" />
+                    onChange={e => setCardForm(f => ({ ...f, diaVencimento: e.target.value }))} className={inputCls} />
                 </div>
               </div>
-
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-medium text-sm">Limite R$</span>
                 <input type="text" inputMode="numeric" placeholder="0,00 (opcional)" value={cardForm.limite}
                   onChange={e => setCardForm(f => ({ ...f, limite: formatCurrencyInput(e.target.value) }))}
-                  className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 pl-24 text-slate-900 dark:text-white outline-none" />
+                  className={`${inputCls} pl-24`} />
               </div>
-
               <div>
                 <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Cor</label>
                 <div className="flex gap-2 flex-wrap">
@@ -526,30 +728,27 @@ export const FinancasTab = ({ cards = [], entries = [], setCards, setEntries }) 
                   ))}
                 </div>
               </div>
-
-              <button onClick={handleSaveCard}
-                className="w-full py-3.5 rounded-xl bg-indigo-600 text-white font-bold active:scale-95 transition-all mt-1">
+              <button onClick={handleSaveCard} className="w-full py-3.5 rounded-xl bg-indigo-600 text-white font-bold active:scale-95 transition-all mt-1">
                 {editingCard ? 'Salvar alterações' : 'Adicionar cartão'}
               </button>
               {editingCard && (
-                <button onClick={() => { setEditingCard(null); setCardForm(blankCard); }}
-                  className="w-full py-2.5 rounded-xl text-slate-500 font-medium text-sm">Cancelar edição</button>
+                <button onClick={() => { setEditingCard(null); setCardForm(blankCard); }} className="w-full py-2.5 rounded-xl text-slate-500 font-medium text-sm">Cancelar edição</button>
               )}
             </div>
           </div>
         </div>
       )}
 
-      {/* ─── Confirmar exclusão ─── */}
+      {/* ── Confirmar exclusão ── */}
       {confirmDel && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setConfirmDel(null)}>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setConfirmDel(null)}>
           <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-3xl p-5" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Excluir?</h3>
             <p className="text-sm text-slate-500 mb-5">
               {confirmDel.tipo === 'card'
                 ? `Remover o cartão "${confirmDel.title}". Os lançamentos ficarão sem cartão.`
                 : confirmDel.tipo === 'group'
-                  ? `Remover "${confirmDel.title}" e todas as ${confirmDel.count} parcelas/repetições.`
+                  ? `Remover "${confirmDel.title}" e todas as ${confirmDel.count} ${confirmDel.recorrente ? 'recorrências' : 'parcelas'}.`
                   : `Remover "${confirmDel.title}".`}
             </p>
             <div className="flex gap-2">
