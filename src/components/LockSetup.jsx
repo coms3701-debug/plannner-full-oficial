@@ -27,12 +27,12 @@ export const LockSetup = ({ onClose }) => {
     try {
       const salt = randomSalt();
       const pinHash = await hashPin(pin, salt);
-      let biometric = false, credentialId = null;
+      let biometric = false, credentialId = null, rpId = null;
       if (useBio && biometricSupported()) {
-        try { credentialId = await registerBiometric(); biometric = true; }
+        try { const r = await registerBiometric(); credentialId = r.credentialId; rpId = r.rpId; biometric = true; }
         catch { setMsg('Não foi possível ativar a biometria — o PIN foi configurado mesmo assim.'); }
       }
-      setLockConfig({ enabled: true, salt, pinHash, biometric, credentialId });
+      setLockConfig({ enabled: true, salt, pinHash, biometric, credentialId, rpId });
       hapticFeedback([40, 30, 60]);
       setMsg('✓ Bloqueio ativado.');
       setTimeout(onClose, 700);
@@ -56,8 +56,8 @@ export const LockSetup = ({ onClose }) => {
     if (!biometricSupported()) { setMsg('Este aparelho/navegador não suporta biometria.'); return; }
     setBusy(true);
     try {
-      const credentialId = await registerBiometric();
-      setLockConfig({ ...getLockConfig(), biometric: true, credentialId });
+      const r = await registerBiometric();
+      setLockConfig({ ...getLockConfig(), biometric: true, credentialId: r.credentialId, rpId: r.rpId });
       hapticFeedback(50);
       setMsg('✓ Biometria ativada.');
     } catch { setMsg('Não foi possível ativar a biometria.'); }

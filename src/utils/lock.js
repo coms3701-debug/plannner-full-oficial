@@ -45,42 +45,57 @@ export const biometricSupported = () =>
 
 export const registerBiometric = async () => {
   if (!biometricSupported()) throw new Error('not-supported');
+  const rpId = window.location.hostname;
   const challenge = crypto.getRandomValues(new Uint8Array(32));
   const userId = crypto.getRandomValues(new Uint8Array(16));
   const cred = await navigator.credentials.create({
     publicKey: {
       challenge,
-      rp: { name: 'Planner Full', id: window.location.hostname },
+      rp: { name: 'Planner Full', id: rpId },
       user: { id: userId, name: 'planner-full', displayName: 'Planner Full' },
       pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
-      authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'preferred' },
+      // residentKey 'required' = passkey descoberta (essencial p/ Face ID no iOS standalone)
+      authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'required', requireResidentKey: true },
       timeout: 60000,
       attestation: 'none',
     },
   });
   if (!cred) throw new Error('failed');
-  return buf2b64(cred.rawId);
+  return { credentialId: buf2b64(cred.rawId), rpId };
 };
 
-export const verifyBiometric = async (credentialIdB64) => {
+export const verifyBiometric = async (cfg) => {
   if (!biometricSupported() || !navigator.credentials.get) {
     return { ok: false, error: 'Sem suporte a biometria neste navegador' };
   }
-  if (!credentialIdB64) return { ok: false, error: 'Biometria não configurada' };
-  const challenge = crypto.getRandomValues(new Uint8Array(32));
+  const credentialIdB64 = typeof cfg === 'string' ? cfg : cfg?.credentialId;
+  const rpId = (cfg && typeof cfg === 'object' && cfg.rpId) ? cfg.rpId : window.location.hostname;
+
+  // 1ª tentativa: passkey DESCOBERTA (sem allowCredentials) — padrão confiável no iOS
   try {
     const assertion = await navigator.credentials.get({
-      publicKey: {
-        challenge,
-        rpId: window.location.hostname,
-        allowCredentials: [{ type: 'public-key', id: b642buf(credentialIdB64), transports: ['internal'] }],
-        userVerification: 'required',
-        timeout: 60000,
-      },
+      publicKey: { challenge: crypto.getRandomValues(new Uint8Array(32)), rpId, userVerification: 'required', timeout: 60000 },
     });
-    return { ok: !!assertion };
-  } catch (e) {
-    console.warn('Biometria falhou:', e);
-    return { ok: false, error: `${e?.name || 'Erro'}: ${e?.message || 'falha'}` };
+    if (assertion) return { ok: true };
+  } catch (e1) {
+    // 2ª tentativa: com a credencial específica (caso a descoberta não funcione)
+    if (credentialIdB64) {
+      try {
+        const assertion2 = await navigator.credentials.get({
+          publicKey: {
+            challenge: crypto.getRandomValues(new Uint8Array(32)),
+            rpId,
+            allowCredentials: [{ type: 'public-key', id: b642buf(credentialIdB64), transports: ['internal'] }],
+            userVerification: 'required',
+            timeout: 60000,
+          },
+        });
+        return { ok: !!assertion2 };
+      } catch (e2) {
+        return { ok: false, error: `${e2?.name || 'Erro'}: ${e2?.message || 'falha'}` };
+      }
+    }
+    return { ok: false, error: `${e1?.name || 'Erro'}: ${e1?.message || 'falha'}` };
   }
+  return { ok: false, error: 'Nenhuma credencial encontrada' };
 };

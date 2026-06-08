@@ -14,7 +14,7 @@ export const LockScreen = ({ onUnlock }) => {
     if (!cfg.biometric || !cfg.credentialId) return;
     setTentandoBio(true);
     setErro('');
-    const res = await verifyBiometric(cfg.credentialId);
+    const res = await verifyBiometric(cfg);
     setTentandoBio(false);
     if (res.ok) { hapticFeedback(50); onUnlock(); return; }
     // Na tentativa automática (sem gesto), iOS bloqueia: não assusta o usuário, só pede o toque.
