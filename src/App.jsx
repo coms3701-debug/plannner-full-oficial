@@ -29,8 +29,12 @@ import { CalculadoraTab } from './components/CalculadoraTab';
 import { FinancasTab } from './components/FinancasTab';
 import { downloadTaskICS } from './utils/ics';
 import { saveSnapshot, getSnapshots, getSnapshotData, countItems } from './utils/backup';
+import { LockScreen } from './components/LockScreen';
+import { LockSetup } from './components/LockSetup';
+import { isLockEnabled } from './utils/lock';
+import { Lock } from 'lucide-react';
 
-const APP_VERSION = 'v6.6.0';
+const APP_VERSION = 'v6.7.0';
 
 
 export default function App() {
@@ -51,6 +55,11 @@ export default function App() {
   const syncTimeoutRef = useRef(null);
   const lastGoodCountRef = useRef(0); // proteção anti-apagamento
   const [restorePrompt, setRestorePrompt] = useState(null); // modal de restauração de snapshots
+
+  // --- BLOQUEIO (Face ID / PIN) ---
+  const [isLocked, setIsLocked] = useState(() => isLockEnabled());
+  const [showLockSetup, setShowLockSetup] = useState(false);
+  const lockActive = isLockEnabled();
 
   const [isBalanceVisible, setIsBalanceVisible] = useLocalStorage('planner_v4_balance_visible', true);
   const [stickyNote, setStickyNote] = useLocalStorage('planner_v4_sticky', '');
@@ -401,6 +410,15 @@ export default function App() {
       window.removeEventListener('pagehide', onPageHide);
     };
   }, [saveDataToCloud, firebaseUser, isDataLoaded]);
+
+  // Re-bloqueia ao voltar de segundo plano (se o bloqueio estiver ativo)
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === 'hidden' && isLockEnabled()) setIsLocked(true);
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
 
   const handleLogout = async () => {
     if (authRef.current) {
@@ -1384,6 +1402,7 @@ export default function App() {
   );
 
   // --- SELETOR DE ECRÃ ---
+  if (lockActive && isLocked) return <LockScreen onUnlock={() => setIsLocked(false)} />;
   if (isInitializing) return <div className="min-h-screen bg-white dark:bg-slate-900 flex items-center justify-center"><RefreshCw className="w-8 h-8 text-blue-500 animate-spin" /></div>;
   if (!firebaseUser) return <AuthScreen auth={authRef.current} />;
   if (!isDataLoaded) return (
@@ -1503,6 +1522,7 @@ export default function App() {
                 <button onClick={() => fileInputRef.current?.click()} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"><Upload className="w-5 h-5 text-slate-500 dark:text-slate-400" /> <span className="font-medium">Importar Backup (JSON)</span></button>
                 <input ref={fileInputRef} type="file" accept="application/json,.json" onChange={handleImportFile} className="hidden" />
                 <button onClick={() => setRestorePrompt({ list: getSnapshots(), ts: null })} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"><RefreshCw className="w-5 h-5 text-slate-500 dark:text-slate-400" /> <span className="font-medium">Restaurar Backup Automático</span></button>
+                <button onClick={() => setShowLockSetup(true)} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"><Lock className="w-5 h-5 text-slate-500 dark:text-slate-400" /> <span className="font-medium">Bloqueio (Face ID / PIN) {lockActive ? '· Ativo' : ''}</span></button>
                 <button onClick={handleLogout} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-red-500/10 text-red-400 mt-4"><LogOut className="w-5 h-5 text-red-400" /> <span className="font-medium">Terminar Sessão</span></button>
               </div>
               <div className="p-4 border-t border-slate-200 dark:border-slate-800"><p className="text-center text-[10px] text-slate-500 uppercase tracking-widest">Planner Full {APP_VERSION} · Finanças + Investimentos</p></div>
@@ -1523,6 +1543,8 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {showLockSetup && <LockSetup onClose={() => { setShowLockSetup(false); setIsSidebarOpen(false); }} />}
 
         {restorePrompt && (
           <div className="absolute inset-0 z-[110] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in">
