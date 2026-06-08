@@ -29,7 +29,7 @@ import { CalculadoraTab } from './components/CalculadoraTab';
 import { FinancasTab } from './components/FinancasTab';
 import { downloadTaskICS } from './utils/ics';
 
-const APP_VERSION = 'v6.5.0';
+const APP_VERSION = 'v6.5.1';
 
 
 export default function App() {

@@ -78,8 +78,9 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
   const mesEntries = useMemo(() => safeEntries.filter(e => e.mesRef === mesRef), [safeEntries, mesRef]);
   const visivel = (e) => !selectedDay || e.diaVenc === selectedDay;
 
-  const receitas = mesEntries.filter(e => e.tipo === 'receita');
-  const despesas = mesEntries.filter(e => e.tipo === 'despesa');
+  const byDia = (a, b) => ((a.diaVenc || 99) - (b.diaVenc || 99));
+  const receitas = mesEntries.filter(e => e.tipo === 'receita').sort(byDia);
+  const despesas = mesEntries.filter(e => e.tipo === 'despesa').sort(byDia);
   const receitasVis = receitas.filter(visivel);
   const despesasVis = despesas.filter(visivel);
 
@@ -148,9 +149,9 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
     setRecurringPrompt(null);
   };
 
-  const openCreate = () => {
+  const openCreate = (day) => {
     setEditId(null);
-    setForm(blankEntry);
+    setForm({ ...blankEntry, diaVenc: day ? String(day) : '' });
     setShowNovaCat(false);
     setShowEntryModal(true);
   };
@@ -416,12 +417,11 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
             return (
               <button
                 key={d}
-                onClick={() => setSelectedDay(isSel ? null : (count ? d : null))}
-                disabled={!count && !isSel}
-                className={`relative aspect-square rounded-lg flex flex-col items-center justify-center text-xs transition-all ${
+                onClick={() => setSelectedDay(isSel ? null : d)}
+                className={`relative aspect-square rounded-lg flex flex-col items-center justify-center text-xs transition-all active:scale-90 ${
                   isSel ? 'bg-indigo-600 text-white font-bold'
-                  : count ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-semibold active:scale-90'
-                  : 'text-slate-400 dark:text-slate-600'
+                  : count ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-semibold'
+                  : 'text-slate-400 dark:text-slate-500 hover:bg-white/50 dark:hover:bg-slate-900/50'
                 }`}
               >
                 <span>{d}</span>
@@ -435,9 +435,21 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
           })}
         </div>
         {selectedDay && (
-          <button onClick={() => setSelectedDay(null)} className="mt-2 w-full text-center text-xs font-semibold text-indigo-500 py-1.5 rounded-lg bg-indigo-500/10">
-            Mostrando vencimentos do dia {selectedDay} · toque para limpar
-          </button>
+          <div className="mt-2 space-y-1.5">
+            <div className="text-center text-[11px] text-slate-500">
+              {(calData.countByDay[selectedDay] || 0) > 0
+                ? `${calData.countByDay[selectedDay]} vencimento(s) no dia ${selectedDay}`
+                : `Nenhum vencimento no dia ${selectedDay}`}
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => openCreate(selectedDay)} className="flex-1 flex items-center justify-center gap-1 text-xs font-semibold text-white py-2 rounded-lg bg-indigo-600 active:scale-95 transition-all">
+                <Plus className="w-3.5 h-3.5" /> Lançar no dia {selectedDay}
+              </button>
+              <button onClick={() => setSelectedDay(null)} className="px-3 text-xs font-semibold text-slate-500 py-2 rounded-lg bg-slate-200 dark:bg-slate-700">
+                Limpar
+              </button>
+            </div>
+          </div>
         )}
       </div>
 
