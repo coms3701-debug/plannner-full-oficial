@@ -304,14 +304,30 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
   const addToCalendar = (entry) => {
     const [y, m] = entry.mesRef.split('-');
     const dd = String(entry.diaVenc || 1).padStart(2, '0');
+    const emoji = entry.tipo === 'receita' ? '💰' : '💳';
+
+    let recurrence = null, recurrenceCount = null, suffix = '';
+    if (entry.parcela) {
+      // Parcelamento de cartão: cria série mensal até a última parcela
+      recurrence = 'monthly';
+      recurrenceCount = Math.max(1, entry.parcela.total - entry.parcela.atual + 1);
+      suffix = ` (parcela ${entry.parcela.atual}/${entry.parcela.total})`;
+    } else if (entry.recorrente && entry.grupoId) {
+      // Recorrente: série mensal limitada a ~12 meses (1 ano) a partir deste mês
+      recurrence = 'monthly';
+      const restantes = safeEntries.filter(e => e.grupoId === entry.grupoId && e.mesRef >= entry.mesRef).length;
+      recurrenceCount = Math.min(12, Math.max(1, restantes));
+    }
+
     downloadTaskICS({
       id: entry.id,
-      title: `${entry.tipo === 'receita' ? '💰' : '💳'} ${entry.descricao}${entry.parcela ? ` (${entry.parcela.atual}/${entry.parcela.total})` : ''} — ${fmtBRL(entry.valor)}`,
+      title: `${emoji} ${entry.descricao}${suffix} — ${fmtBRL(entry.valor)}`,
       dueDate: `${y}-${m}-${dd}`,
       dueTime: '09:00',
       hasReminder: true,
-      recurrence: null,
-      description: `Vencimento: ${fmtBRL(entry.valor)} (${entry.categoria})`,
+      recurrence,
+      recurrenceCount,
+      description: `${entry.tipo === 'receita' ? 'Recebimento' : 'Vencimento'}: ${fmtBRL(entry.valor)} (${entry.categoria})${recurrence ? recurrenceCount ? ` · repete por ${recurrenceCount} meses` : ' · mensal' : ''}`,
     });
   };
 

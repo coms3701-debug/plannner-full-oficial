@@ -66,7 +66,10 @@ export const generateTaskICS = (task) => {
   // Recorrência
   const freqMap = { daily: 'DAILY', weekly: 'WEEKLY', monthly: 'MONTHLY', yearly: 'YEARLY' };
   if (task.recurrence && freqMap[task.recurrence]) {
-    lines.push(`RRULE:FREQ=${freqMap[task.recurrence]}`);
+    let rule = `RRULE:FREQ=${freqMap[task.recurrence]}`;
+    const count = parseInt(task.recurrenceCount, 10);
+    if (count && count > 0) rule += `;COUNT=${count}`;
+    lines.push(rule);
   }
 
   // Alarmes — múltiplos para garantir que o usuário seja avisado
