@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   Wallet, CreditCard, Plus, X, ChevronLeft, ChevronRight, TrendingUp, TrendingDown,
-  CalendarPlus, Check, Clock, Pencil, Trash2, Layers, RefreshCw, Settings2, CalendarDays
+  CalendarPlus, Check, Clock, Pencil, Trash2, Layers, RefreshCw, Settings2, CalendarDays, RotateCcw
 } from 'lucide-react';
 import { SwipeableItem, SwipeHint } from './SwipeableItem';
 import { formatCurrencyInput, parseCurrencyToNumber } from '../utils/currency';
@@ -33,6 +33,7 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
   const [recurringPrompt, setRecurringPrompt] = useState(null); // {action,'pago'|'edit', entryId, grupoId, ...}
   const [showNovaCat, setShowNovaCat] = useState(false);
   const [novaCatInput, setNovaCatInput] = useState('');
+  const [showTrash, setShowTrash] = useState(false);
 
   const blankEntry = {
     tipo: 'despesa', descricao: '', valorInput: '', categoria: '',
@@ -43,18 +44,30 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
   const blankCard = { nome: '', diaFechamento: '', diaVencimento: '', cor: CARD_COLORS[0], limite: '' };
   const [cardForm, setCardForm] = useState(blankCard);
 
-  const safeEntries = Array.isArray(entries) ? entries.filter(e => e && e.id) : [];
+  const allEntries = Array.isArray(entries) ? entries.filter(e => e && e.id) : [];
+  const safeEntries = allEntries.filter(e => !e.deletedAt); // exclui itens na lixeira
+  const deletedEntries = allEntries.filter(e => e.deletedAt).sort((a, b) => String(b.deletedAt).localeCompare(String(a.deletedAt)));
   const safeCards = Array.isArray(cards) ? cards.filter(c => c && c.id) : [];
 
   // Reseta filtro de dia ao trocar de mês
   useEffect(() => { setSelectedDay(null); }, [mesRef]);
+
+  // Auto-limpeza: remove definitivamente itens na lixeira há mais de 30 dias
+  useEffect(() => {
+    const limite = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    setEntries(prev => {
+      const arr = Array.isArray(prev) ? prev : [];
+      const filtrado = arr.filter(e => !(e?.deletedAt && new Date(e.deletedAt).getTime() < limite));
+      return filtrado.length !== arr.length ? filtrado : prev;
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Materialização contínua de recorrências infinitas: mantém ~12 meses à frente
   useEffect(() => {
     setEntries(prev => {
       const arr = Array.isArray(prev) ? prev : [];
       const groups = {};
-      arr.forEach(e => { if (e?.recorrenteInfinito && e.grupoId) (groups[e.grupoId] ||= []).push(e); });
+      arr.forEach(e => { if (e?.recorrenteInfinito && e.grupoId && !e.deletedAt) (groups[e.grupoId] ||= []).push(e); });
       const target = addMonths(mesRef, BUFFER_INFINITO);
       const additions = [];
       Object.entries(groups).forEach(([gid, list]) => {
@@ -290,16 +303,42 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
 
   const doDelete = () => {
     if (!confirmDel) return;
+    const now = new Date().toISOString();
     if (confirmDel.tipo === 'card') {
       setCards(prev => (Array.isArray(prev) ? prev : []).filter(c => c.id !== confirmDel.id));
       setEntries(prev => (Array.isArray(prev) ? prev : []).map(e => e.cardId === confirmDel.id ? { ...e, cardId: null } : e));
     } else if (confirmDel.tipo === 'group') {
-      setEntries(prev => (Array.isArray(prev) ? prev : []).filter(e => e.grupoId !== confirmDel.grupoId));
+      // Lixeira: marca recorrências/parcelas como excluídas (recuperável por 30 dias)
+      setEntries(prev => (Array.isArray(prev) ? prev : []).map(e => e.grupoId === confirmDel.grupoId ? { ...e, deletedAt: now } : e));
     } else {
-      setEntries(prev => (Array.isArray(prev) ? prev : []).filter(e => e.id !== confirmDel.id));
+      setEntries(prev => (Array.isArray(prev) ? prev : []).map(e => e.id === confirmDel.id ? { ...e, deletedAt: now } : e));
     }
     setConfirmDel(null);
   };
+
+  // Lixeira: restaurar e excluir definitivamente
+  const restoreEntry = (entry) => {
+    if (entry.grupoId) {
+      setEntries(prev => (Array.isArray(prev) ? prev : []).map(e => e.grupoId === entry.grupoId ? { ...e, deletedAt: null } : e));
+    } else {
+      setEntries(prev => (Array.isArray(prev) ? prev : []).map(e => e.id === entry.id ? { ...e, deletedAt: null } : e));
+    }
+  };
+  const purgeEntry = (entry) => {
+    if (entry.grupoId) {
+      setEntries(prev => (Array.isArray(prev) ? prev : []).filter(e => e.grupoId !== entry.grupoId));
+    } else {
+      setEntries(prev => (Array.isArray(prev) ? prev : []).filter(e => e.id !== entry.id));
+    }
+  };
+  // Agrupa lixeira (uma linha por grupo)
+  const trashGroups = (() => {
+    const seen = new Set();
+    return deletedEntries.filter(e => {
+      if (e.grupoId) { if (seen.has(e.grupoId)) return false; seen.add(e.grupoId); }
+      return true;
+    });
+  })();
 
   const addToCalendar = (entry) => {
     const [y, m] = entry.mesRef.split('-');
@@ -395,12 +434,23 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
         <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
           <Wallet className="w-6 h-6 text-indigo-500" /> Finanças
         </h2>
-        <button
-          onClick={() => { setEditingCard(null); setCardForm(blankCard); setShowCardModal(true); }}
-          className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 active:scale-95 transition-all"
-        >
-          <Settings2 className="w-4 h-4" /> Cartões
-        </button>
+        <div className="flex items-center gap-2">
+          {trashGroups.length > 0 && (
+            <button
+              onClick={() => setShowTrash(true)}
+              className="relative flex items-center justify-center w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 active:scale-95 transition-all"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span className="absolute -top-1 -right-1 text-[9px] font-bold bg-rose-500 text-white rounded-full w-4 h-4 flex items-center justify-center">{trashGroups.length}</span>
+            </button>
+          )}
+          <button
+            onClick={() => { setEditingCard(null); setCardForm(blankCard); setShowCardModal(true); }}
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 active:scale-95 transition-all"
+          >
+            <Settings2 className="w-4 h-4" /> Cartões
+          </button>
+        </div>
       </div>
 
       {/* Navegador de mês */}
@@ -776,13 +826,45 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
               {confirmDel.tipo === 'card'
                 ? `Remover o cartão "${confirmDel.title}". Os lançamentos ficarão sem cartão.`
                 : confirmDel.tipo === 'group'
-                  ? `Remover "${confirmDel.title}" e todas as ${confirmDel.count} ${confirmDel.recorrente ? 'recorrências' : 'parcelas'}.`
-                  : `Remover "${confirmDel.title}".`}
+                  ? `"${confirmDel.title}" e todas as ${confirmDel.count} ${confirmDel.recorrente ? 'recorrências' : 'parcelas'} irão para a lixeira (recuperável por 30 dias).`
+                  : `"${confirmDel.title}" irá para a lixeira (recuperável por 30 dias).`}
             </p>
             <div className="flex gap-2">
               <button onClick={() => setConfirmDel(null)} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium">Cancelar</button>
-              <button onClick={doDelete} className="flex-1 py-3 rounded-xl bg-rose-600 text-white font-bold">Excluir</button>
+              <button onClick={doDelete} className="flex-1 py-3 rounded-xl bg-rose-600 text-white font-bold">{confirmDel.tipo === 'card' ? 'Excluir' : 'Mover p/ lixeira'}</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Lixeira ── */}
+      {showTrash && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowTrash(false)}>
+          <div className="w-full sm:max-w-md bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl p-5 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2"><Trash2 className="w-5 h-5 text-rose-500" /> Lixeira</h3>
+              <button onClick={() => setShowTrash(false)} className="text-slate-400"><X className="w-5 h-5" /></button>
+            </div>
+            <p className="text-xs text-slate-500 mb-4">Itens excluídos são apagados definitivamente após 30 dias.</p>
+            {trashGroups.length === 0 ? (
+              <p className="text-center text-sm text-slate-400 py-8">A lixeira está vazia.</p>
+            ) : (
+              <div className="space-y-2">
+                {trashGroups.map(e => (
+                  <div key={e.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-100 dark:bg-slate-800">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-sm text-slate-900 dark:text-white truncate">{e.descricao}</div>
+                      <div className="text-[10px] text-slate-500">
+                        {e.tipo === 'receita' ? '+' : '−'}{fmtBRL(e.valor)} · {e.categoria}
+                        {e.grupoId ? (e.parcela ? ' · parcelas' : ' · recorrência') : ''} · excluído {new Date(e.deletedAt).toLocaleDateString('pt-BR')}
+                      </div>
+                    </div>
+                    <button onClick={() => restoreEntry(e)} className="text-emerald-500 p-1.5" title="Restaurar"><RotateCcw className="w-4 h-4" /></button>
+                    <button onClick={() => purgeEntry(e)} className="text-rose-500 p-1.5" title="Excluir definitivamente"><Trash2 className="w-4 h-4" /></button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

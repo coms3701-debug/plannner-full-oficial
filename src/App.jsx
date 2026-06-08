@@ -28,8 +28,9 @@ import { AuthScreen } from './components/AuthScreen';
 import { CalculadoraTab } from './components/CalculadoraTab';
 import { FinancasTab } from './components/FinancasTab';
 import { downloadTaskICS } from './utils/ics';
+import { saveSnapshot, getSnapshots, getSnapshotData, countItems } from './utils/backup';
 
-const APP_VERSION = 'v6.5.2';
+const APP_VERSION = 'v6.6.0';
 
 
 export default function App() {
@@ -48,6 +49,8 @@ export default function App() {
   const dbRef = useRef(null);
   const authRef = useRef(null);
   const syncTimeoutRef = useRef(null);
+  const lastGoodCountRef = useRef(0); // proteção anti-apagamento
+  const [restorePrompt, setRestorePrompt] = useState(null); // modal de restauração de snapshots
 
   const [isBalanceVisible, setIsBalanceVisible] = useLocalStorage('planner_v4_balance_visible', true);
   const [stickyNote, setStickyNote] = useLocalStorage('planner_v4_sticky', '');
@@ -221,6 +224,8 @@ export default function App() {
         if (Array.isArray(data.financeEntries)) setFinanceEntries(data.financeEntries);
         if (data.financeCategories && typeof data.financeCategories === 'object' && !Array.isArray(data.financeCategories)) setFinanceCategories(data.financeCategories);
         if (data.lastUpdated) setLocalLastUpdated(data.lastUpdated);
+        lastGoodCountRef.current = countItems(data);
+        saveSnapshot(data); // snapshot do que veio da nuvem
         setSyncStatus('online');
       } else {
         setSyncStatus('online');
@@ -291,9 +296,9 @@ export default function App() {
     reader.readAsText(file);
   };
 
-  const confirmImport = () => {
-    if (!importPrompt?.data) return;
-    const d = importPrompt.data;
+  // Aplica um conjunto de dados (compartilhado por importação de JSON e restauração de snapshot)
+  const applyDataSet = (d) => {
+    if (!d || typeof d !== 'object') return;
     if (Array.isArray(d.tasks)) setTasks(d.tasks);
     if (Array.isArray(d.taskCategories)) setTaskCategories(d.taskCategories);
     if (Array.isArray(d.habitsList)) setHabitsList(d.habitsList);
@@ -308,27 +313,54 @@ export default function App() {
     if (Array.isArray(d.financeCards)) setFinanceCards(d.financeCards);
     if (Array.isArray(d.financeEntries)) setFinanceEntries(d.financeEntries);
     if (d.financeCategories && typeof d.financeCategories === 'object' && !Array.isArray(d.financeCategories)) setFinanceCategories(d.financeCategories);
+    lastGoodCountRef.current = countItems(d);
     setLocalLastUpdated(new Date().toISOString());
+  };
+
+  const confirmImport = () => {
+    if (!importPrompt?.data) return;
+    applyDataSet(importPrompt.data);
     setImportPrompt(null);
     setIsSidebarOpen(false);
     hapticFeedback([40, 30, 60]);
   };
 
+  const confirmRestore = () => {
+    if (!restorePrompt?.ts) return;
+    const d = getSnapshotData(restorePrompt.ts);
+    if (d) {
+      applyDataSet(d);
+      hapticFeedback([40, 30, 60]);
+    }
+    setRestorePrompt(null);
+    setIsSidebarOpen(false);
+  };
+
   const saveDataToCloud = useCallback(async () => {
     if (!firebaseUser || !dbRef.current || !isDataLoaded) return false;
+    const payload = {
+      tasks, taskCategories, habitsList, habits, dailyTasks,
+      portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance,
+      stickyNote, priorities, financeCards, financeEntries, financeCategories,
+    };
+    // PROTEÇÃO ANTI-APAGAMENTO: nunca grava "vazio" por cima de dados existentes.
+    const currentCount = countItems(payload);
+    if (currentCount === 0 && lastGoodCountRef.current > 0) {
+      console.warn('Gravação bloqueada: dados vazios não serão salvos por cima da nuvem.');
+      setSyncStatus('error');
+      setSyncError('Proteção ativada: dados vazios não foram salvos por segurança. Reabra o app ou restaure um backup.');
+      return false;
+    }
     setSyncStatus('syncing');
     const now = new Date().toISOString();
     // Marca local imediatamente — se o sync falhar, ainda sabemos que o local é o mais recente
     setLocalLastUpdated(now);
     try {
+      saveSnapshot(payload); // snapshot local antes de gravar
       const appId = typeof __app_id !== 'undefined' ? __app_id : 'planner-v3';
       const docPath = doc(dbRef.current, 'artifacts', appId, 'users', firebaseUser.uid, 'plannerData', 'main_v3');
-      await setDoc(docPath, {
-        tasks, taskCategories, habitsList, habits, dailyTasks,
-        portfolioCategories, portfolio, portfolioUpdateDate, prevPortfolioBalance,
-        stickyNote, priorities, financeCards, financeEntries, financeCategories,
-        lastUpdated: now
-      }, { merge: true });
+      await setDoc(docPath, { ...payload, lastUpdated: now }, { merge: true });
+      if (currentCount > 0) lastGoodCountRef.current = currentCount;
       setSyncStatus('online');
       setSyncError(null);
       return true;
@@ -1470,6 +1502,7 @@ export default function App() {
                 <button onClick={handleExportData} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"><Download className="w-5 h-5 text-slate-500 dark:text-slate-400" /> <span className="font-medium">Exportar Backup (JSON)</span></button>
                 <button onClick={() => fileInputRef.current?.click()} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"><Upload className="w-5 h-5 text-slate-500 dark:text-slate-400" /> <span className="font-medium">Importar Backup (JSON)</span></button>
                 <input ref={fileInputRef} type="file" accept="application/json,.json" onChange={handleImportFile} className="hidden" />
+                <button onClick={() => setRestorePrompt({ list: getSnapshots(), ts: null })} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"><RefreshCw className="w-5 h-5 text-slate-500 dark:text-slate-400" /> <span className="font-medium">Restaurar Backup Automático</span></button>
                 <button onClick={handleLogout} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-red-500/10 text-red-400 mt-4"><LogOut className="w-5 h-5 text-red-400" /> <span className="font-medium">Terminar Sessão</span></button>
               </div>
               <div className="p-4 border-t border-slate-200 dark:border-slate-800"><p className="text-center text-[10px] text-slate-500 uppercase tracking-widest">Planner Full {APP_VERSION} · Finanças + Investimentos</p></div>
@@ -1486,6 +1519,32 @@ export default function App() {
               <div className="flex gap-3">
                 <button onClick={() => setDeletePrompt(null)} className="flex-1 py-3 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white font-medium">Cancelar</button>
                 <button onClick={confirmDelete} className="flex-1 py-3 rounded-xl bg-red-600 text-slate-900 dark:text-white font-medium">Excluir</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {restorePrompt && (
+          <div className="absolute inset-0 z-[110] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in">
+            <div className="bg-slate-100 dark:bg-slate-800 rounded-3xl p-6 w-full max-w-[360px] border border-slate-300 dark:border-slate-700 shadow-2xl max-h-[80vh] flex flex-col">
+              <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center mb-3 mx-auto"><RefreshCw className="w-6 h-6 text-blue-400" /></div>
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white text-center mb-1">Restaurar Backup</h3>
+              <p className="text-slate-500 dark:text-slate-400 text-center text-xs mb-4">Cópias automáticas locais. Restaurar vai <span className="text-yellow-500 font-bold">substituir os dados atuais</span>.</p>
+              <div className="flex-1 overflow-y-auto space-y-2 mb-4 hide-scrollbar">
+                {(restorePrompt.list || []).length === 0 && (
+                  <p className="text-center text-sm text-slate-500 py-6">Nenhum backup automático ainda. Eles são criados conforme você usa o app.</p>
+                )}
+                {(restorePrompt.list || []).map((s) => (
+                  <button key={s.ts} onClick={() => setRestorePrompt(p => ({ ...p, ts: s.ts }))}
+                    className={`w-full text-left p-3 rounded-xl border transition-all ${restorePrompt.ts === s.ts ? 'border-blue-500 bg-blue-500/10' : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900'}`}>
+                    <div className="text-sm font-semibold text-slate-900 dark:text-white">{new Date(s.ts).toLocaleString('pt-BR')}</div>
+                    <div className="text-[11px] text-slate-500">{s.count} itens</div>
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setRestorePrompt(null)} className="flex-1 py-3 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white font-medium">Cancelar</button>
+                <button onClick={confirmRestore} disabled={!restorePrompt.ts} className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-medium disabled:opacity-40">Restaurar</button>
               </div>
             </div>
           </div>
