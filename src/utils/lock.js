@@ -63,21 +63,24 @@ export const registerBiometric = async () => {
 };
 
 export const verifyBiometric = async (credentialIdB64) => {
-  if (!biometricSupported() || !credentialIdB64) return false;
+  if (!biometricSupported() || !navigator.credentials.get) {
+    return { ok: false, error: 'Sem suporte a biometria neste navegador' };
+  }
+  if (!credentialIdB64) return { ok: false, error: 'Biometria não configurada' };
   const challenge = crypto.getRandomValues(new Uint8Array(32));
   try {
     const assertion = await navigator.credentials.get({
       publicKey: {
         challenge,
         rpId: window.location.hostname,
-        allowCredentials: [{ type: 'public-key', id: b642buf(credentialIdB64) }],
+        allowCredentials: [{ type: 'public-key', id: b642buf(credentialIdB64), transports: ['internal'] }],
         userVerification: 'required',
         timeout: 60000,
       },
     });
-    return !!assertion;
+    return { ok: !!assertion };
   } catch (e) {
     console.warn('Biometria falhou:', e);
-    return false;
+    return { ok: false, error: `${e?.name || 'Erro'}: ${e?.message || 'falha'}` };
   }
 };

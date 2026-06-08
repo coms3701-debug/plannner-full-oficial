@@ -10,21 +10,23 @@ export const LockScreen = ({ onUnlock }) => {
   const [tentandoBio, setTentandoBio] = useState(false);
   const biometriaIniciada = useRef(false);
 
-  const tentarBiometria = async () => {
+  const tentarBiometria = async (manual = false) => {
     if (!cfg.biometric || !cfg.credentialId) return;
     setTentandoBio(true);
     setErro('');
-    const ok = await verifyBiometric(cfg.credentialId);
+    const res = await verifyBiometric(cfg.credentialId);
     setTentandoBio(false);
-    if (ok) { hapticFeedback(50); onUnlock(); }
-    else setErro('Biometria não reconhecida. Use o PIN.');
+    if (res.ok) { hapticFeedback(50); onUnlock(); return; }
+    // Na tentativa automática (sem gesto), iOS bloqueia: não assusta o usuário, só pede o toque.
+    if (manual) setErro(res.error || 'Biometria não reconhecida. Use o PIN.');
+    else setErro('Toque no ícone 👆 para usar o Face ID, ou digite o PIN.');
   };
 
   // Tenta biometria automaticamente ao abrir (uma vez)
   useEffect(() => {
     if (cfg.biometric && cfg.credentialId && !biometriaIniciada.current) {
       biometriaIniciada.current = true;
-      tentarBiometria();
+      tentarBiometria(false);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -58,8 +60,8 @@ export const LockScreen = ({ onUnlock }) => {
           <span key={i} className={`w-3.5 h-3.5 rounded-full transition-all ${i < pin.length ? 'bg-blue-500' : 'bg-slate-300 dark:bg-slate-700'}`} />
         ))}
       </div>
-      <div className="h-6 mb-2">
-        {erro && <p className="text-xs text-rose-500">{erro}</p>}
+      <div className="min-h-[2.5rem] mb-2 px-6 max-w-[320px] text-center">
+        {erro && <p className="text-xs text-rose-500 break-words">{erro}</p>}
         {tentandoBio && <p className="text-xs text-slate-500">Aguardando biometria…</p>}
       </div>
 
@@ -72,7 +74,7 @@ export const LockScreen = ({ onUnlock }) => {
           </button>
         ))}
         {cfg.biometric && cfg.credentialId ? (
-          <button onClick={tentarBiometria} className="aspect-square rounded-full flex items-center justify-center text-blue-500 active:scale-90 transition-all">
+          <button onClick={() => tentarBiometria(true)} className="aspect-square rounded-full flex items-center justify-center text-blue-500 active:scale-90 transition-all">
             <Fingerprint className="w-8 h-8" />
           </button>
         ) : <div />}
