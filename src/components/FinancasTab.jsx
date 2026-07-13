@@ -37,6 +37,10 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
   const [showTrash, setShowTrash] = useState(false);
   const [catFilter, setCatFilter] = useState([]); // filtro multi-seleção de categorias
   const [showCatMenu, setShowCatMenu] = useState(false);
+  const [showCatManager, setShowCatManager] = useState(false);
+  const [catEditing, setCatEditing] = useState(null); // nome da categoria em renomeação
+  const [catEditValue, setCatEditValue] = useState('');
+  const [catManagerMsg, setCatManagerMsg] = useState('');
 
   const hojeStr = () => {
     const d = new Date();
@@ -144,7 +148,9 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
   const catList = (tipo) => {
     const base = tipo === 'receita' ? CATEGORIAS_RECEITA : CATEGORIAS_DESPESA;
     const custom = (categories && Array.isArray(categories[tipo])) ? categories[tipo] : [];
-    return Array.from(new Set([...base, ...custom])).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    const ocultas = (categories && Array.isArray(categories[`ocultas_${tipo}`])) ? categories[`ocultas_${tipo}`] : [];
+    return Array.from(new Set([...base.filter(c => !ocultas.includes(c)), ...custom]))
+      .sort((a, b) => a.localeCompare(b, 'pt-BR'));
   };
 
   const addCategoria = () => {
@@ -159,6 +165,50 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
     setForm(f => ({ ...f, categoria: label }));
     setNovaCatInput('');
     setShowNovaCat(false);
+  };
+
+  // Renomeia uma categoria e atualiza TODOS os lançamentos do tipo que a usam
+  const renameCategoria = (oldName, newNameRaw) => {
+    const newName = newNameRaw.trim();
+    if (!newName || newName === oldName) return;
+    const tipo = form.tipo;
+    const base = tipo === 'receita' ? CATEGORIAS_RECEITA : CATEGORIAS_DESPESA;
+    setCategories(prev => {
+      const safe = (prev && typeof prev === 'object' && !Array.isArray(prev)) ? prev : {};
+      const list = (Array.isArray(safe[tipo]) ? safe[tipo] : []).filter(c => c !== oldName);
+      if (!list.some(c => c.toLowerCase() === newName.toLowerCase()) && !base.includes(newName)) list.push(newName);
+      const hiddenKey = `ocultas_${tipo}`;
+      const hidden = Array.isArray(safe[hiddenKey]) ? [...safe[hiddenKey]] : [];
+      if (base.includes(oldName) && !hidden.includes(oldName)) hidden.push(oldName); // esconde a padrão antiga
+      const hiddenFinal = hidden.filter(c => c !== newName); // se renomear de volta p/ uma padrão, reexibe
+      return { ...safe, [tipo]: list, [hiddenKey]: hiddenFinal };
+    });
+    setEntries(prev => (Array.isArray(prev) ? prev : []).map(e =>
+      e && e.tipo === tipo && (e.categoria || 'Outros') === oldName ? { ...e, categoria: newName } : e
+    ));
+    if (form.categoria === oldName) setForm(f => ({ ...f, categoria: newName }));
+    if (catFilter.includes(oldName)) setCatFilter(prev => prev.map(c => c === oldName ? newName : c));
+  };
+
+  // Exclui categoria da lista (bloqueia se estiver em uso por lançamentos)
+  const deleteCategoria = (name) => {
+    const tipo = form.tipo;
+    const emUso = allEntries.filter(e => e && e.tipo === tipo && (e.categoria || 'Outros') === name).length;
+    if (emUso > 0) {
+      setCatManagerMsg(`"${name}" está em uso por ${emUso} lançamento${emUso !== 1 ? 's' : ''}. Renomeie ou edite os lançamentos antes.`);
+      return;
+    }
+    const base = tipo === 'receita' ? CATEGORIAS_RECEITA : CATEGORIAS_DESPESA;
+    setCategories(prev => {
+      const safe = (prev && typeof prev === 'object' && !Array.isArray(prev)) ? prev : {};
+      const list = (Array.isArray(safe[tipo]) ? safe[tipo] : []).filter(c => c !== name);
+      const hiddenKey = `ocultas_${tipo}`;
+      const hidden = Array.isArray(safe[hiddenKey]) ? [...safe[hiddenKey]] : [];
+      if (base.includes(name) && !hidden.includes(name)) hidden.push(name);
+      return { ...safe, [tipo]: list, [hiddenKey]: hidden };
+    });
+    if (form.categoria === name) setForm(f => ({ ...f, categoria: '' }));
+    setCatManagerMsg('');
   };
 
   // ── Handlers ──
@@ -754,7 +804,13 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
 
               {/* Categoria — dropdown alfabético + nova */}
               <div>
-                <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Categoria</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold text-slate-500">Categoria</label>
+                  <button onClick={() => { setShowCatManager(true); setCatEditing(null); setCatManagerMsg(''); }}
+                    className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-indigo-500 active:scale-95 transition-all">
+                    <Pencil className="w-3 h-3" /> Gerenciar
+                  </button>
+                </div>
                 <select
                   value={showNovaCat ? '__nova__' : form.categoria}
                   onChange={e => {
@@ -987,6 +1043,59 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
               <button onClick={() => setConfirmDel(null)} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium">Cancelar</button>
               <button onClick={doDelete} className="flex-1 py-3 rounded-xl bg-rose-600 text-white font-bold">{confirmDel.tipo === 'card' ? 'Excluir' : 'Mover p/ lixeira'}</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Gerenciar categorias ── */}
+      {showCatManager && (
+        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowCatManager(false)}>
+          <div className="w-full sm:max-w-md bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl p-5 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Pencil className="w-5 h-5 text-indigo-500" /> Categorias de {form.tipo === 'receita' ? 'receita' : 'despesa'}
+              </h3>
+              <button onClick={() => setShowCatManager(false)} className="text-slate-400"><X className="w-5 h-5" /></button>
+            </div>
+            <p className="text-xs text-slate-500 mb-4">Renomear atualiza todos os lançamentos da categoria. Excluir só é possível se não houver lançamentos nela.</p>
+
+            {catManagerMsg && (
+              <p className="text-xs text-amber-500 bg-amber-500/10 border border-amber-500/30 rounded-xl p-2.5 mb-3">{catManagerMsg}</p>
+            )}
+
+            <div className="space-y-1.5">
+              {catList(form.tipo).map(c => (
+                <div key={c} className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800">
+                  {catEditing === c ? (
+                    <>
+                      <input type="text" autoFocus value={catEditValue}
+                        onChange={e => setCatEditValue(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); renameCategoria(c, catEditValue); setCatEditing(null); } }}
+                        className="flex-1 min-w-0 bg-white dark:bg-slate-900 border border-indigo-500 rounded-lg px-2.5 py-1.5 text-sm text-slate-900 dark:text-white outline-none" />
+                      <button onClick={() => { renameCategoria(c, catEditValue); setCatEditing(null); }}
+                        className="shrink-0 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold">OK</button>
+                      <button onClick={() => setCatEditing(null)} className="shrink-0 text-slate-400 p-1"><X className="w-4 h-4" /></button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="flex-1 min-w-0 truncate text-sm font-semibold text-slate-900 dark:text-white">{c}</span>
+                      <span className="shrink-0 text-[10px] text-slate-500 mr-1">
+                        {allEntries.filter(e => e && e.tipo === form.tipo && (e.categoria || 'Outros') === c).length} lanç.
+                      </span>
+                      <button onClick={() => { setCatEditing(c); setCatEditValue(c); setCatManagerMsg(''); }}
+                        className="shrink-0 text-slate-400 hover:text-indigo-500 p-1.5"><Pencil className="w-4 h-4" /></button>
+                      <button onClick={() => deleteCategoria(c)}
+                        className="shrink-0 text-slate-400 hover:text-rose-500 p-1.5"><Trash2 className="w-4 h-4" /></button>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <button onClick={() => { setShowCatManager(false); setShowNovaCat(true); }}
+              className="w-full mt-3 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-indigo-500 font-bold text-sm">
+              ＋ Nova categoria
+            </button>
           </div>
         </div>
       )}
