@@ -256,10 +256,16 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
 
   const openEdit = (entry) => {
     setEditId(entry.id);
+    // Parcelada no cartão: o campo valor mostra o TOTAL da compra (soma das parcelas),
+    // igual à criação. Assinatura e demais mostram o valor mensal/unitário.
+    const ehParcelada = entry.cardId && !entry.recorrenteInfinito && entry.grupoId;
+    const valorForm = ehParcelada
+      ? safeEntries.filter(e => e.grupoId === entry.grupoId).reduce((s, e) => s + (e.valor || 0), 0)
+      : (entry.valor || 0);
     setForm({
       tipo: entry.tipo,
       descricao: entry.descricao || '',
-      valorInput: formatCurrencyInput(String(Math.round((entry.valor || 0) * 100))),
+      valorInput: formatCurrencyInput(String(Math.round(valorForm * 100))),
       categoria: entry.categoria || '',
       diaVenc: entry.diaVenc ? String(entry.diaVenc) : '',
       cardId: entry.cardId || '',
@@ -321,15 +327,47 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
       const entry = safeEntries.find(e => e.id === editId);
       if (!entry) { setShowEntryModal(false); return; }
 
-      // Despesa no cartão: reconstrói a série inteira com os novos parâmetros
-      // (data da compra, parcelas, assinatura), preservando meses já pagos.
-      if (tipo === 'despesa' && form.cardId) {
-        const antigos = entry.grupoId ? allEntries.filter(e => e.grupoId === entry.grupoId) : [entry];
-        const pagos = new Set(antigos.filter(o => o.status === 'pago').map(o => o.mesRef));
-        const novos = montarSerieCartao({ grupoId: `g_${Date.now()}`, baseId: Date.now(), valor, categoria })
-          .map(n => pagos.has(n.mesRef) ? { ...n, status: 'pago' } : n);
-        const idsAntigos = new Set(antigos.map(o => o.id));
-        setEntries(prev => [...(Array.isArray(prev) ? prev : []).filter(e => !idsAntigos.has(e.id)), ...novos]);
+      // Despesa no cartão: só reconstrói a série se algum campo ESTRUTURAL mudou
+      // (data da compra, nº de parcelas, modo, cartão). Trocar categoria, descrição
+      // ou valor NUNCA mexe em meses, status de pago ou divisão de parcelas.
+      if (tipo === 'despesa' && (form.cardId || entry.cardId)) {
+        const grupo = entry.grupoId ? allEntries.filter(e => e.grupoId === entry.grupoId) : [entry];
+        const modoOrig = entry.recorrenteInfinito ? 'assinatura' : 'parcelada';
+        const parcOrig = entry.parcela?.total || 1;
+        const dataOrig = entry.dataCompra || derivarDataCompra(entry);
+        const estrutural =
+          (form.cardId || null) !== (entry.cardId || null) ||
+          form.modoCartao !== modoOrig ||
+          (form.modoCartao === 'parcelada' && (parseInt(form.parcelas, 10) || 1) !== parcOrig) ||
+          form.dataCompra !== dataOrig;
+
+        if (estrutural && form.cardId) {
+          const pagos = new Set(grupo.filter(o => o.status === 'pago').map(o => o.mesRef));
+          const novos = montarSerieCartao({ grupoId: `g_${Date.now()}`, baseId: Date.now(), valor, categoria })
+            .map(n => pagos.has(n.mesRef) ? { ...n, status: 'pago' } : n);
+          const idsAntigos = new Set(grupo.map(o => o.id));
+          setEntries(prev => [...(Array.isArray(prev) ? prev : []).filter(e => !idsAntigos.has(e.id)), ...novos]);
+          closeEntryModal();
+          return;
+        }
+
+        // Edição em vigor (não estrutural): aplica ao grupo mantendo tudo no lugar
+        const changesBase = { descricao: form.descricao.trim(), categoria, lembrete: form.lembrete };
+        let novosValores = null; // Map id → valor (só se o valor total mudou numa parcelada)
+        if (!entry.recorrenteInfinito) {
+          const totalOrig = grupo.reduce((s, e) => s + (e.valor || 0), 0);
+          if (Math.abs(valor - totalOrig) > 0.004) {
+            const ordenado = [...grupo].sort((a, b) => String(a.mesRef).localeCompare(String(b.mesRef)));
+            const divididos = dividirParcelas(valor, ordenado.length);
+            novosValores = new Map(ordenado.map((e, i) => [e.id, divididos[i]]));
+          }
+        }
+        setEntries(prev => (Array.isArray(prev) ? prev : []).map(e => {
+          const noGrupo = entry.grupoId ? e.grupoId === entry.grupoId : e.id === entry.id;
+          if (!noGrupo) return e;
+          const v = entry.recorrenteInfinito ? valor : (novosValores ? novosValores.get(e.id) : e.valor);
+          return { ...e, ...changesBase, valor: v };
+        }));
         closeEntryModal();
         return;
       }
