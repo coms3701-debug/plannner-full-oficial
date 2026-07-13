@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   Wallet, CreditCard, Plus, X, ChevronLeft, ChevronRight, TrendingUp, TrendingDown,
-  CalendarPlus, Check, Clock, Pencil, Trash2, Layers, RefreshCw, Settings2, CalendarDays, RotateCcw
+  CalendarPlus, Check, Clock, Pencil, Trash2, Layers, RefreshCw, Settings2, CalendarDays, RotateCcw,
+  Filter, ChevronDown
 } from 'lucide-react';
 import { SwipeableItem, SwipeHint } from './SwipeableItem';
 import { formatCurrencyInput, parseCurrencyToNumber } from '../utils/currency';
@@ -34,6 +35,8 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
   const [showNovaCat, setShowNovaCat] = useState(false);
   const [novaCatInput, setNovaCatInput] = useState('');
   const [showTrash, setShowTrash] = useState(false);
+  const [catFilter, setCatFilter] = useState([]); // filtro multi-seleção de categorias
+  const [showCatMenu, setShowCatMenu] = useState(false);
 
   const hojeStr = () => {
     const d = new Date();
@@ -55,8 +58,8 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
   const deletedEntries = allEntries.filter(e => e.deletedAt).sort((a, b) => String(b.deletedAt).localeCompare(String(a.deletedAt)));
   const safeCards = Array.isArray(cards) ? cards.filter(c => c && c.id) : [];
 
-  // Reseta filtro de dia ao trocar de mês
-  useEffect(() => { setSelectedDay(null); }, [mesRef]);
+  // Reseta filtro de dia ao trocar de mês (o de categoria permanece)
+  useEffect(() => { setSelectedDay(null); setShowCatMenu(false); }, [mesRef]);
 
   // Auto-limpeza: remove definitivamente itens na lixeira há mais de 30 dias
   useEffect(() => {
@@ -95,13 +98,24 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
 
   // ── Dados do mês ──
   const mesEntries = useMemo(() => safeEntries.filter(e => e.mesRef === mesRef), [safeEntries, mesRef]);
-  const visivel = (e) => !selectedDay || e.diaVenc === selectedDay;
+  const visivel = (e) =>
+    (!selectedDay || e.diaVenc === selectedDay) &&
+    (catFilter.length === 0 || catFilter.includes(e.categoria || 'Outros'));
 
   const byDia = (a, b) => ((a.diaVenc || 99) - (b.diaVenc || 99));
   const receitas = mesEntries.filter(e => e.tipo === 'receita').sort(byDia);
   const despesas = mesEntries.filter(e => e.tipo === 'despesa').sort(byDia);
   const receitasVis = receitas.filter(visivel);
   const despesasVis = despesas.filter(visivel);
+
+  // Categorias presentes no mês (para o filtro suspenso)
+  const categoriasDoMes = useMemo(
+    () => Array.from(new Set(mesEntries.map(e => e.categoria || 'Outros'))).sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    [mesEntries]
+  );
+  const totalReceitasFiltro = receitasVis.reduce((s, e) => s + (e.valor || 0), 0);
+  const totalDespesasFiltro = despesasVis.reduce((s, e) => s + (e.valor || 0), 0);
+  const toggleCatFilter = (c) => setCatFilter(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c]);
 
   const totalReceitas = receitas.reduce((s, e) => s + (e.valor || 0), 0);
   const totalDespesas = despesas.reduce((s, e) => s + (e.valor || 0), 0);
@@ -522,6 +536,56 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
         </button>
       </div>
 
+      {/* Filtro de categorias (menu suspenso, multi-seleção) */}
+      {categoriasDoMes.length > 0 && (
+        <div className="relative">
+          <button
+            onClick={() => setShowCatMenu(v => !v)}
+            className={`w-full flex items-center justify-between rounded-2xl p-3 transition-all active:scale-[0.99] border ${catFilter.length > 0 ? 'bg-indigo-500/10 border-indigo-500/40' : 'bg-slate-100 dark:bg-slate-800 border-transparent'}`}
+          >
+            <span className={`flex items-center gap-2 text-xs font-bold uppercase tracking-wide ${catFilter.length > 0 ? 'text-indigo-500' : 'text-slate-500'}`}>
+              <Filter className="w-4 h-4" />
+              {catFilter.length === 0 ? 'Filtrar por categoria' : catFilter.length <= 2 ? catFilter.join(' · ') : `${catFilter.length} categorias`}
+            </span>
+            <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${showCatMenu ? 'rotate-180' : ''}`} />
+          </button>
+
+          {showCatMenu && (
+            <div className="absolute z-40 mt-1.5 w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl max-h-72 overflow-y-auto p-1.5">
+              {categoriasDoMes.map(c => {
+                const on = catFilter.includes(c);
+                return (
+                  <button key={c} onClick={() => toggleCatFilter(c)}
+                    className={`w-full flex items-center justify-between p-2.5 rounded-xl text-sm font-semibold transition-all ${on ? 'bg-indigo-500/10 text-indigo-500' : 'text-slate-700 dark:text-slate-300'}`}>
+                    <span>{c}</span>
+                    <span className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${on ? 'bg-indigo-500 border-indigo-500' : 'border-slate-300 dark:border-slate-600'}`}>
+                      {on && <Check className="w-3.5 h-3.5 text-white" strokeWidth={3} />}
+                    </span>
+                  </button>
+                );
+              })}
+              {catFilter.length > 0 && (
+                <button onClick={() => { setCatFilter([]); setShowCatMenu(false); }}
+                  className="w-full p-2.5 mt-1 rounded-xl text-xs font-bold uppercase tracking-wide text-rose-500 bg-rose-500/10">
+                  Limpar filtro
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Total das categorias selecionadas */}
+          {catFilter.length > 0 && (
+            <div className="mt-1.5 flex items-center justify-between bg-indigo-500/10 border border-indigo-500/30 rounded-2xl px-3 py-2 text-xs font-bold">
+              <span className="text-indigo-500 uppercase tracking-wide">{receitasVis.length + despesasVis.length} lançamento{receitasVis.length + despesasVis.length !== 1 ? 's' : ''}</span>
+              <span className="flex items-center gap-2">
+                {totalReceitasFiltro > 0 && <span className="text-emerald-500">+{fmtBRL(totalReceitasFiltro)}</span>}
+                {totalDespesasFiltro > 0 && <span className="text-rose-500">−{fmtBRL(totalDespesasFiltro)}</span>}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Calendário do mês */}
       <div className="bg-slate-100 dark:bg-slate-800 rounded-2xl p-3">
         <div className="grid grid-cols-7 gap-1 mb-1">
@@ -637,11 +701,17 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
         </div>
       )}
 
-      {(selectedDay ? (receitasVis.length + despesasVis.length === 0) : (mesEntries.length === 0)) && (
+      {((selectedDay || catFilter.length > 0) ? (receitasVis.length + despesasVis.length === 0) : (mesEntries.length === 0)) && (
         <div className="text-center py-12 text-slate-400 dark:text-slate-600">
-          {selectedDay ? <CalendarDays className="w-12 h-12 mx-auto mb-3 opacity-40" /> : <Layers className="w-12 h-12 mx-auto mb-3 opacity-40" />}
-          <p className="text-sm">{selectedDay ? `Nenhum vencimento no dia ${selectedDay}.` : `Nenhum lançamento em ${cap(formatMonthLabel(mesRef))}.`}</p>
-          {!selectedDay && <p className="text-xs mt-1">Toque em + para adicionar.</p>}
+          {(selectedDay || catFilter.length > 0) ? <CalendarDays className="w-12 h-12 mx-auto mb-3 opacity-40" /> : <Layers className="w-12 h-12 mx-auto mb-3 opacity-40" />}
+          <p className="text-sm">
+            {selectedDay
+              ? `Nenhum vencimento no dia ${selectedDay}.`
+              : catFilter.length > 0
+                ? 'Nenhum lançamento nas categorias selecionadas.'
+                : `Nenhum lançamento em ${cap(formatMonthLabel(mesRef))}.`}
+          </p>
+          {!selectedDay && catFilter.length === 0 && <p className="text-xs mt-1">Toque em + para adicionar.</p>}
         </div>
       )}
 
