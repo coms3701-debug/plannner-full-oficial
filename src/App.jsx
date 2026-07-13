@@ -27,6 +27,7 @@ import { TabErrorBoundary } from './components/TabErrorBoundary';
 import { AuthScreen } from './components/AuthScreen';
 import { CalculadoraTab } from './components/CalculadoraTab';
 import { FinancasTab } from './components/FinancasTab';
+import { DespesasResumo } from './components/DespesasResumo';
 import { downloadTaskICS } from './utils/ics';
 import { saveSnapshot, getSnapshots, getSnapshotData, countItems } from './utils/backup';
 import { LockScreen } from './components/LockScreen';
@@ -34,7 +35,7 @@ import { LockSetup } from './components/LockSetup';
 import { isLockEnabled } from './utils/lock';
 import { Lock } from 'lucide-react';
 
-const APP_VERSION = 'v6.8.1';
+const APP_VERSION = 'v6.9.0';
 
 
 export default function App() {
@@ -967,6 +968,9 @@ export default function App() {
             className="w-full bg-transparent text-sm text-slate-800 dark:text-slate-200 outline-none resize-none min-h-[80px] placeholder:text-slate-600 focus:placeholder:text-slate-500 transition-colors"
           />
         </div>
+
+        {/* ── DESPESAS POR CATEGORIA ── */}
+        <DespesasResumo entries={financeEntries} />
 
         {/* ── PRÓXIMOS DIAS ── */}
         <div>
