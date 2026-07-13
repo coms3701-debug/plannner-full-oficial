@@ -34,7 +34,7 @@ import { LockSetup } from './components/LockSetup';
 import { isLockEnabled } from './utils/lock';
 import { Lock } from 'lucide-react';
 
-const APP_VERSION = 'v6.7.2';
+const APP_VERSION = 'v6.8.0';
 
 
 export default function App() {

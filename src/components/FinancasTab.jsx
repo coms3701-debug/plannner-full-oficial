@@ -35,9 +35,15 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
   const [novaCatInput, setNovaCatInput] = useState('');
   const [showTrash, setShowTrash] = useState(false);
 
+  const hojeStr = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
   const blankEntry = {
     tipo: 'despesa', descricao: '', valorInput: '', categoria: '',
     diaVenc: '', cardId: '', parcelas: '1', repeticao: 'unica', qtdeMeses: '', lembrete: false,
+    dataCompra: hojeStr(), modoCartao: 'parcelada', // 'parcelada' | 'assinatura'
   };
   const [form, setForm] = useState(blankEntry);
 
@@ -182,6 +188,8 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
       repeticao: entry.recorrente ? 'mensal' : 'unica',
       qtdeMeses: '',
       lembrete: !!entry.lembrete,
+      dataCompra: entry.dataCompra || hojeStr(),
+      modoCartao: (entry.cardId && entry.recorrenteInfinito) ? 'assinatura' : 'parcelada',
     });
     setShowNovaCat(false);
     setShowEntryModal(true);
@@ -217,21 +225,35 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
 
     if (isCartao) {
       const card = safeCards.find(c => c.id === form.cardId);
-      const valores = dividirParcelas(valor, nParcelas);
-      const diaBase = diaVenc || (card ? parseInt(card.diaVencimento, 10) : 1) || 1;
-      const dataCompra = `${mesRef}-${String(diaBase).padStart(2, '0')}`;
+      // Data da compra define em qual fatura cai a 1ª cobrança (fechamento real do cartão)
+      const dataCompra = /^\d{4}-\d{2}-\d{2}$/.test(form.dataCompra) ? form.dataCompra : hojeStr();
+      const diaVencFatura = card ? (parseInt(card.diaVencimento, 10) || 1) : 1;
       const primeiroMes = card
-        ? primeiraFaturaMes(dataCompra, parseInt(card.diaFechamento, 10) || 1, parseInt(card.diaVencimento, 10) || diaBase)
+        ? primeiraFaturaMes(dataCompra, parseInt(card.diaFechamento, 10) || 1, diaVencFatura)
         : mesRef;
-      const diaVencFatura = card ? (parseInt(card.diaVencimento, 10) || diaBase) : diaBase;
-      for (let i = 0; i < nParcelas; i++) {
-        novos.push({
-          id: `${baseId}_${i}`, tipo: 'despesa', descricao: form.descricao.trim(), valor: valores[i],
-          categoria, mesRef: addMonths(primeiroMes, i), diaVenc: diaVencFatura, status: 'pendente',
-          recorrente: false, recorrenteInfinito: false, lembrete: form.lembrete, cardId: form.cardId,
-          parcela: nParcelas > 1 ? { atual: i + 1, total: nParcelas } : null,
-          grupoId: nParcelas > 1 ? grupoId : null,
-        });
+
+      if (form.modoCartao === 'assinatura') {
+        // Assinatura: valor cheio todo mês, sem término (materialização contínua)
+        for (let i = 0; i < HORIZONTE_INFINITO; i++) {
+          const mRef = addMonths(primeiroMes, i);
+          novos.push({
+            id: `${grupoId}_${mRef}`, tipo: 'despesa', descricao: form.descricao.trim(), valor,
+            categoria, mesRef: mRef, diaVenc: diaVencFatura, status: 'pendente',
+            recorrente: true, recorrenteInfinito: true, lembrete: form.lembrete, cardId: form.cardId,
+            dataCompra, parcela: null, grupoId,
+          });
+        }
+      } else {
+        const valores = dividirParcelas(valor, nParcelas);
+        for (let i = 0; i < nParcelas; i++) {
+          novos.push({
+            id: `${baseId}_${i}`, tipo: 'despesa', descricao: form.descricao.trim(), valor: valores[i],
+            categoria, mesRef: addMonths(primeiroMes, i), diaVenc: diaVencFatura, status: 'pendente',
+            recorrente: false, recorrenteInfinito: false, lembrete: form.lembrete, cardId: form.cardId,
+            dataCompra, parcela: nParcelas > 1 ? { atual: i + 1, total: nParcelas } : null,
+            grupoId: nParcelas > 1 ? grupoId : null,
+          });
+        }
       }
     } else {
       const recorrente = form.repeticao === 'mensal';
@@ -673,19 +695,37 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Dia venc.</label>
-                  <input type="number" min="1" max="31" placeholder="Ex.: 10" value={form.diaVenc}
-                    onChange={e => setForm(f => ({ ...f, diaVenc: e.target.value }))} className={inputCls} />
-                </div>
-                {form.tipo === 'despesa' && form.cardId ? (
-                  <div>
-                    <label className="text-xs font-semibold text-slate-500 mb-1.5 block flex items-center gap-1"><Layers className="w-3 h-3" />Parcelas</label>
-                    <input type="number" min="1" max="60" placeholder="Ex.: 12" value={form.parcelas}
-                      onChange={e => setForm(f => ({ ...f, parcelas: e.target.value }))} className={inputCls} disabled={!!editId} />
+              {form.tipo === 'despesa' && form.cardId ? (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 mb-1.5 block flex items-center gap-1"><CalendarDays className="w-3 h-3" />Data da compra</label>
+                      <input type="date" value={form.dataCompra}
+                        onChange={e => setForm(f => ({ ...f, dataCompra: e.target.value }))} className={inputCls} disabled={!!editId} />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 mb-1.5 block flex items-center gap-1"><RefreshCw className="w-3 h-3" />Cobrança</label>
+                      <select value={form.modoCartao} onChange={e => setForm(f => ({ ...f, modoCartao: e.target.value }))} className={inputCls} disabled={!!editId}>
+                        <option value="parcelada">À vista / Parcelada</option>
+                        <option value="assinatura">Assinatura (sem término)</option>
+                      </select>
+                    </div>
                   </div>
-                ) : (
+                  {form.modoCartao === 'parcelada' && (
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 mb-1.5 block flex items-center gap-1"><Layers className="w-3 h-3" />Parcelas (1 = à vista)</label>
+                      <input type="number" min="1" max="60" placeholder="Ex.: 12" value={form.parcelas}
+                        onChange={e => setForm(f => ({ ...f, parcelas: e.target.value }))} className={inputCls} disabled={!!editId} />
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Dia venc.</label>
+                    <input type="number" min="1" max="31" placeholder="Ex.: 10" value={form.diaVenc}
+                      onChange={e => setForm(f => ({ ...f, diaVenc: e.target.value }))} className={inputCls} />
+                  </div>
                   <div>
                     <label className="text-xs font-semibold text-slate-500 mb-1.5 block flex items-center gap-1"><RefreshCw className="w-3 h-3" />Repetição</label>
                     <select value={form.repeticao} onChange={e => setForm(f => ({ ...f, repeticao: e.target.value }))} className={inputCls} disabled={!!editId}>
@@ -693,8 +733,8 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
                       <option value="mensal">Mensal</option>
                     </select>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
 
               {/* Qtde de meses (mensal, sem cartão) */}
               {!editId && form.repeticao === 'mensal' && !(form.tipo === 'despesa' && form.cardId) && (
@@ -706,11 +746,22 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
               )}
 
               {/* Previews */}
-              {!editId && form.tipo === 'despesa' && form.cardId && parseInt(form.parcelas, 10) > 1 && parseCurrencyToNumber(form.valorInput) > 0 && (
-                <p className="text-xs text-slate-500 bg-slate-100 dark:bg-slate-800 rounded-xl p-2.5">
-                  {form.parcelas}× de aprox. <span className="font-bold text-indigo-500">{fmtBRL(parseCurrencyToNumber(form.valorInput) / parseInt(form.parcelas, 10))}</span>, lançadas nas faturas a partir de {cap(formatMonthLabel(mesRef))}.
-                </p>
-              )}
+              {!editId && form.tipo === 'despesa' && form.cardId && parseCurrencyToNumber(form.valorInput) > 0 && (() => {
+                const card = safeCards.find(c => c.id === form.cardId);
+                if (!card) return null;
+                const dc = /^\d{4}-\d{2}-\d{2}$/.test(form.dataCompra) ? form.dataCompra : hojeStr();
+                const primeira = primeiraFaturaMes(dc, parseInt(card.diaFechamento, 10) || 1, parseInt(card.diaVencimento, 10) || 1);
+                const nP = Math.max(1, parseInt(form.parcelas, 10) || 1);
+                return (
+                  <p className="text-xs text-slate-500 bg-slate-100 dark:bg-slate-800 rounded-xl p-2.5">
+                    {form.modoCartao === 'assinatura'
+                      ? <>Assinatura de <span className="font-bold text-indigo-500">{fmtBRL(parseCurrencyToNumber(form.valorInput))}/mês</span>, sem término, em toda fatura a partir de <span className="font-bold">{cap(formatMonthLabel(primeira))}</span> (fecha dia {card.diaFechamento}, vence dia {card.diaVencimento}).</>
+                      : nP > 1
+                        ? <>{nP}× de aprox. <span className="font-bold text-indigo-500">{fmtBRL(parseCurrencyToNumber(form.valorInput) / nP)}</span> — 1ª parcela na fatura de <span className="font-bold">{cap(formatMonthLabel(primeira))}</span> (compra {dc.split('-').reverse().join('/')}, fecha dia {card.diaFechamento}).</>
+                        : <>À vista — entra na fatura de <span className="font-bold">{cap(formatMonthLabel(primeira))}</span> (fecha dia {card.diaFechamento}, vence dia {card.diaVencimento}).</>}
+                  </p>
+                );
+              })()}
               {!editId && form.repeticao === 'mensal' && !(form.tipo === 'despesa' && form.cardId) && parseCurrencyToNumber(form.valorInput) > 0 && (
                 <p className="text-xs text-slate-500 bg-slate-100 dark:bg-slate-800 rounded-xl p-2.5">
                   {fmtBRL(parseCurrencyToNumber(form.valorInput))}/mês {form.qtdeMeses && parseInt(form.qtdeMeses, 10) >= 1 ? `por ${form.qtdeMeses} meses` : 'por tempo indeterminado (∞)'}, a partir de {cap(formatMonthLabel(mesRef))}.
