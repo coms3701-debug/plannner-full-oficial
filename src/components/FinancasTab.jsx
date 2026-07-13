@@ -175,6 +175,21 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
     setShowEntryModal(true);
   };
 
+  // Lançamentos antigos de cartão não têm dataCompra salva: deriva uma data
+  // que mantém a série na MESMA fatura atual (a edição não desloca nada).
+  const derivarDataCompra = (entry) => {
+    if (!entry.cardId) return hojeStr();
+    const card = safeCards.find(c => c.id === entry.cardId);
+    if (!card) return hojeStr();
+    const grupo = entry.grupoId ? safeEntries.filter(e => e.grupoId === entry.grupoId) : [entry];
+    const primeiroMes = grupo.map(e => e.mesRef).sort()[0] || entry.mesRef;
+    const F = parseInt(card.diaFechamento, 10) || 1;
+    const V = parseInt(card.diaVencimento, 10) || 1;
+    // compra no dia 1 fecha no próprio mês; a fatura vence no mês seguinte se V <= F
+    const mesCompra = V <= F ? addMonths(primeiroMes, -1) : primeiroMes;
+    return `${mesCompra}-01`;
+  };
+
   const openEdit = (entry) => {
     setEditId(entry.id);
     setForm({
@@ -188,11 +203,46 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
       repeticao: entry.recorrente ? 'mensal' : 'unica',
       qtdeMeses: '',
       lembrete: !!entry.lembrete,
-      dataCompra: entry.dataCompra || hojeStr(),
+      dataCompra: entry.dataCompra || derivarDataCompra(entry),
       modoCartao: (entry.cardId && entry.recorrenteInfinito) ? 'assinatura' : 'parcelada',
     });
     setShowNovaCat(false);
     setShowEntryModal(true);
+  };
+
+  // Monta a série de lançamentos de uma despesa no cartão (à vista, parcelada ou assinatura)
+  const montarSerieCartao = ({ grupoId, baseId, valor, categoria }) => {
+    const card = safeCards.find(c => c.id === form.cardId);
+    const dataCompra = /^\d{4}-\d{2}-\d{2}$/.test(form.dataCompra) ? form.dataCompra : hojeStr();
+    const diaVencFatura = card ? (parseInt(card.diaVencimento, 10) || 1) : 1;
+    const primeiroMes = card
+      ? primeiraFaturaMes(dataCompra, parseInt(card.diaFechamento, 10) || 1, diaVencFatura)
+      : mesRef;
+    const novos = [];
+    if (form.modoCartao === 'assinatura') {
+      for (let i = 0; i < HORIZONTE_INFINITO; i++) {
+        const mRef = addMonths(primeiroMes, i);
+        novos.push({
+          id: `${grupoId}_${mRef}`, tipo: 'despesa', descricao: form.descricao.trim(), valor,
+          categoria, mesRef: mRef, diaVenc: diaVencFatura, status: 'pendente',
+          recorrente: true, recorrenteInfinito: true, lembrete: form.lembrete, cardId: form.cardId,
+          dataCompra, parcela: null, grupoId,
+        });
+      }
+    } else {
+      const nParcelas = Math.max(1, parseInt(form.parcelas, 10) || 1);
+      const valores = dividirParcelas(valor, nParcelas);
+      for (let i = 0; i < nParcelas; i++) {
+        novos.push({
+          id: `${baseId}_${i}`, tipo: 'despesa', descricao: form.descricao.trim(), valor: valores[i],
+          categoria, mesRef: addMonths(primeiroMes, i), diaVenc: diaVencFatura, status: 'pendente',
+          recorrente: false, recorrenteInfinito: false, lembrete: form.lembrete, cardId: form.cardId,
+          dataCompra, parcela: nParcelas > 1 ? { atual: i + 1, total: nParcelas } : null,
+          grupoId: nParcelas > 1 ? grupoId : null,
+        });
+      }
+    }
+    return novos;
   };
 
   const handleSaveEntry = () => {
@@ -206,6 +256,20 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
     if (editId) {
       const entry = safeEntries.find(e => e.id === editId);
       if (!entry) { setShowEntryModal(false); return; }
+
+      // Despesa no cartão: reconstrói a série inteira com os novos parâmetros
+      // (data da compra, parcelas, assinatura), preservando meses já pagos.
+      if (tipo === 'despesa' && form.cardId) {
+        const antigos = entry.grupoId ? allEntries.filter(e => e.grupoId === entry.grupoId) : [entry];
+        const pagos = new Set(antigos.filter(o => o.status === 'pago').map(o => o.mesRef));
+        const novos = montarSerieCartao({ grupoId: `g_${Date.now()}`, baseId: Date.now(), valor, categoria })
+          .map(n => pagos.has(n.mesRef) ? { ...n, status: 'pago' } : n);
+        const idsAntigos = new Set(antigos.map(o => o.id));
+        setEntries(prev => [...(Array.isArray(prev) ? prev : []).filter(e => !idsAntigos.has(e.id)), ...novos]);
+        closeEntryModal();
+        return;
+      }
+
       const changes = { descricao: form.descricao.trim(), valor, categoria, diaVenc, cardId: form.cardId || null, lembrete: form.lembrete };
       if (entry.grupoId && entry.recorrente) {
         setRecurringPrompt({ action: 'edit', entryId: editId, grupoId: entry.grupoId, changes, title: entry.descricao });
@@ -221,40 +285,9 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
     const baseId = Date.now();
     const novos = [];
     const isCartao = tipo === 'despesa' && form.cardId;
-    const nParcelas = isCartao ? Math.max(1, parseInt(form.parcelas, 10) || 1) : 1;
 
     if (isCartao) {
-      const card = safeCards.find(c => c.id === form.cardId);
-      // Data da compra define em qual fatura cai a 1ª cobrança (fechamento real do cartão)
-      const dataCompra = /^\d{4}-\d{2}-\d{2}$/.test(form.dataCompra) ? form.dataCompra : hojeStr();
-      const diaVencFatura = card ? (parseInt(card.diaVencimento, 10) || 1) : 1;
-      const primeiroMes = card
-        ? primeiraFaturaMes(dataCompra, parseInt(card.diaFechamento, 10) || 1, diaVencFatura)
-        : mesRef;
-
-      if (form.modoCartao === 'assinatura') {
-        // Assinatura: valor cheio todo mês, sem término (materialização contínua)
-        for (let i = 0; i < HORIZONTE_INFINITO; i++) {
-          const mRef = addMonths(primeiroMes, i);
-          novos.push({
-            id: `${grupoId}_${mRef}`, tipo: 'despesa', descricao: form.descricao.trim(), valor,
-            categoria, mesRef: mRef, diaVenc: diaVencFatura, status: 'pendente',
-            recorrente: true, recorrenteInfinito: true, lembrete: form.lembrete, cardId: form.cardId,
-            dataCompra, parcela: null, grupoId,
-          });
-        }
-      } else {
-        const valores = dividirParcelas(valor, nParcelas);
-        for (let i = 0; i < nParcelas; i++) {
-          novos.push({
-            id: `${baseId}_${i}`, tipo: 'despesa', descricao: form.descricao.trim(), valor: valores[i],
-            categoria, mesRef: addMonths(primeiroMes, i), diaVenc: diaVencFatura, status: 'pendente',
-            recorrente: false, recorrenteInfinito: false, lembrete: form.lembrete, cardId: form.cardId,
-            dataCompra, parcela: nParcelas > 1 ? { atual: i + 1, total: nParcelas } : null,
-            grupoId: nParcelas > 1 ? grupoId : null,
-          });
-        }
-      }
+      novos.push(...montarSerieCartao({ grupoId, baseId, valor, categoria }));
     } else {
       const recorrente = form.repeticao === 'mensal';
       const qtde = parseInt(form.qtdeMeses, 10);
@@ -701,11 +734,11 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
                     <div>
                       <label className="text-xs font-semibold text-slate-500 mb-1.5 block flex items-center gap-1"><CalendarDays className="w-3 h-3" />Data da compra</label>
                       <input type="date" value={form.dataCompra}
-                        onChange={e => setForm(f => ({ ...f, dataCompra: e.target.value }))} className={inputCls} disabled={!!editId} />
+                        onChange={e => setForm(f => ({ ...f, dataCompra: e.target.value }))} className={inputCls} />
                     </div>
                     <div>
                       <label className="text-xs font-semibold text-slate-500 mb-1.5 block flex items-center gap-1"><RefreshCw className="w-3 h-3" />Cobrança</label>
-                      <select value={form.modoCartao} onChange={e => setForm(f => ({ ...f, modoCartao: e.target.value }))} className={inputCls} disabled={!!editId}>
+                      <select value={form.modoCartao} onChange={e => setForm(f => ({ ...f, modoCartao: e.target.value }))} className={inputCls}>
                         <option value="parcelada">À vista / Parcelada</option>
                         <option value="assinatura">Assinatura (sem término)</option>
                       </select>
@@ -715,7 +748,7 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
                     <div>
                       <label className="text-xs font-semibold text-slate-500 mb-1.5 block flex items-center gap-1"><Layers className="w-3 h-3" />Parcelas (1 = à vista)</label>
                       <input type="number" min="1" max="60" placeholder="Ex.: 12" value={form.parcelas}
-                        onChange={e => setForm(f => ({ ...f, parcelas: e.target.value }))} className={inputCls} disabled={!!editId} />
+                        onChange={e => setForm(f => ({ ...f, parcelas: e.target.value }))} className={inputCls} />
                     </div>
                   )}
                 </>
@@ -746,7 +779,7 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
               )}
 
               {/* Previews */}
-              {!editId && form.tipo === 'despesa' && form.cardId && parseCurrencyToNumber(form.valorInput) > 0 && (() => {
+              {form.tipo === 'despesa' && form.cardId && parseCurrencyToNumber(form.valorInput) > 0 && (() => {
                 const card = safeCards.find(c => c.id === form.cardId);
                 if (!card) return null;
                 const dc = /^\d{4}-\d{2}-\d{2}$/.test(form.dataCompra) ? form.dataCompra : hojeStr();
