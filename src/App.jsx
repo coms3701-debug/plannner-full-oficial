@@ -35,7 +35,7 @@ import { LockSetup } from './components/LockSetup';
 import { isLockEnabled } from './utils/lock';
 import { Lock } from 'lucide-react';
 
-const APP_VERSION = 'v6.9.3';
+const APP_VERSION = 'v6.9.4';
 
 
 export default function App() {
@@ -1628,8 +1628,9 @@ export default function App() {
             </form>
           </div>
         )}
+
+        <style dangerouslySetInnerHTML={{__html: `.pb-safe { padding-bottom: max(env(safe-area-inset-bottom, 20px), 16px); } input[type="date"]::-webkit-calendar-picker-indicator, input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: 0.5; cursor: pointer; } ::-webkit-scrollbar { width: 0px; background: transparent; } .hide-scrollbar::-webkit-scrollbar { display: none; } .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }`}} />
       </div>
-      <style dangerouslySetInnerHTML={{__html: `.pb-safe { padding-bottom: max(env(safe-area-inset-bottom, 20px), 16px); } input[type="date"]::-webkit-calendar-picker-indicator, input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: 0.5; cursor: pointer; } ::-webkit-scrollbar { width: 0px; background: transparent; } .hide-scrollbar::-webkit-scrollbar { display: none; } .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }`}} />
     </div>
   );
 }
