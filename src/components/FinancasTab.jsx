@@ -940,7 +940,7 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
               )}
 
               {/* Qtde de meses + Parcelas (mensal, sem cartão) */}
-              {!editId && form.repeticao === 'mensal' && !(form.tipo === 'despesa' && form.cardId) && (
+              {form.repeticao === 'mensal' && !(form.tipo === 'despesa' && form.cardId) && (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Qtde de meses (vazio = ∞)</label>
@@ -972,7 +972,7 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
                   </p>
                 );
               })()}
-              {!editId && form.repeticao === 'mensal' && !(form.tipo === 'despesa' && form.cardId) && parseCurrencyToNumber(form.valorInput) > 0 && (() => {
+              {form.repeticao === 'mensal' && !(form.tipo === 'despesa' && form.cardId) && parseCurrencyToNumber(form.valorInput) > 0 && (() => {
                 const nParcelas = Math.max(1, parseInt(form.parcelas, 10) || 1);
                 const vTotal = parseCurrencyToNumber(form.valorInput);
                 const valores = nParcelas > 1 ? dividirParcelas(vTotal, nParcelas) : [vTotal];
