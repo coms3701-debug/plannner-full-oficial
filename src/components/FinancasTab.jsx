@@ -396,13 +396,11 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
       const infinito = recorrente && (!form.qtdeMeses || isNaN(qtde) || qtde < 1);
       const nMeses = !recorrente ? 1 : (infinito ? HORIZONTE_INFINITO : qtde);
       const nParcelas = recorrente ? Math.max(1, parseInt(form.parcelas, 10) || 1) : 1;
-      const valores = nParcelas > 1 ? dividirParcelas(valor, nParcelas) : [valor];
 
       for (let i = 0; i < nMeses; i++) {
         const mRef = addMonths(mesRef, i);
-        const vParc = nParcelas > 1 ? valores[i % nParcelas] : valor; // cicla valores se nMeses > nParcelas
         novos.push({
-          id: recorrente ? `${grupoId}_${mRef}` : `${baseId}`, tipo, descricao: form.descricao.trim(), valor: vParc,
+          id: recorrente ? `${grupoId}_${mRef}` : `${baseId}`, tipo, descricao: form.descricao.trim(), valor,
           categoria, mesRef: mRef, diaVenc, status: 'pendente', recorrente, recorrenteInfinito: infinito,
           lembrete: form.lembrete, cardId: null,
           parcela: nParcelas > 1 ? { atual: (i % nParcelas) + 1, total: nParcelas } : null,
@@ -972,19 +970,11 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
                   </p>
                 );
               })()}
-              {!editId && form.repeticao === 'mensal' && !(form.tipo === 'despesa' && form.cardId) && parseCurrencyToNumber(form.valorInput) > 0 && (() => {
-                const nParcelas = Math.max(1, parseInt(form.parcelas, 10) || 1);
-                const vTotal = parseCurrencyToNumber(form.valorInput);
-                const vParc = nParcelas > 1 ? vTotal / nParcelas : vTotal;
-                const meses = form.qtdeMeses && parseInt(form.qtdeMeses, 10) >= 1 ? `por ${form.qtdeMeses} meses` : 'por tempo indeterminado (∞)';
-                return (
-                  <p className="text-xs text-slate-500 bg-slate-100 dark:bg-slate-800 rounded-xl p-2.5">
-                    {nParcelas > 1
-                      ? <>{nParcelas}× de <span className="font-bold text-indigo-500">{fmtBRL(vParc)}</span> — <span className="font-bold">{meses}</span>, a partir de {cap(formatMonthLabel(mesRef))}.</>
-                      : <>{fmtBRL(vTotal)}/mês {meses}, a partir de {cap(formatMonthLabel(mesRef))}</>}
-                  </p>
-                );
-              })()}
+              {!editId && form.repeticao === 'mensal' && !(form.tipo === 'despesa' && form.cardId) && parseCurrencyToNumber(form.valorInput) > 0 && (
+                <p className="text-xs text-slate-500 bg-slate-100 dark:bg-slate-800 rounded-xl p-2.5">
+                  {fmtBRL(parseCurrencyToNumber(form.valorInput))}/mês {form.qtdeMeses && parseInt(form.qtdeMeses, 10) >= 1 ? `por ${form.qtdeMeses} meses` : 'por tempo indeterminado (∞)'} {parseInt(form.parcelas, 10) > 1 ? `em ${form.parcelas} parcelas` : ''}, a partir de {cap(formatMonthLabel(mesRef))}.
+                </p>
+              )}
 
               <button onClick={handleSaveEntry} className="w-full py-3.5 rounded-xl bg-indigo-600 text-white font-bold active:scale-95 transition-all mt-1">
                 {editId ? 'Salvar alterações' : 'Salvar lançamento'}
