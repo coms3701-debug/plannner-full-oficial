@@ -256,12 +256,16 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
 
   const openEdit = (entry) => {
     setEditId(entry.id);
-    // Parcelada no cartão: o campo valor mostra o TOTAL da compra (soma das parcelas),
-    // igual à criação. Assinatura e demais mostram o valor mensal/unitário.
-    const ehParcelada = entry.cardId && !entry.recorrenteInfinito && entry.grupoId;
+    // Parcelado: o campo valor mostra o TOTAL da compra (soma das parcelas),
+    // igual à criação. Assinatura/valor fixo mostram o valor mensal.
+    const grupo = entry.grupoId ? safeEntries.filter(e => e.grupoId === entry.grupoId) : [entry];
+    const ehParcelada = !!entry.parcela && !entry.recorrenteInfinito;
     const valorForm = ehParcelada
-      ? safeEntries.filter(e => e.grupoId === entry.grupoId).reduce((s, e) => s + (e.valor || 0), 0)
+      ? grupo.reduce((s, e) => s + (e.valor || 0), 0)
       : (entry.valor || 0);
+    // Valor fixo mensal por prazo definido: preenche a qtde de meses da série
+    const qtdeMesesForm = (!entry.cardId && entry.recorrente && !entry.recorrenteInfinito && !entry.parcela)
+      ? String(grupo.length) : '';
     setForm({
       tipo: entry.tipo,
       descricao: entry.descricao || '',
@@ -271,7 +275,7 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
       cardId: entry.cardId || '',
       parcelas: entry.parcela ? String(entry.parcela.total) : '1',
       repeticao: entry.recorrente ? 'mensal' : 'unica',
-      qtdeMeses: '',
+      qtdeMeses: qtdeMesesForm,
       lembrete: !!entry.lembrete,
       dataCompra: entry.dataCompra || derivarDataCompra(entry),
       modoCartao: (entry.cardId && entry.recorrenteInfinito) ? 'assinatura' : 'parcelada',
@@ -311,6 +315,33 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
           grupoId: nParcelas > 1 ? grupoId : null,
         });
       }
+    }
+    return novos;
+  };
+
+  // Monta a série de um lançamento sem cartão: única, parcelada (divide o valor
+  // em N meses, igual ao cartão) ou valor fixo mensal (N meses ou infinito).
+  const montarSerieSimples = ({ grupoId, baseId, valor, categoria, tipo, diaVenc, mesInicial }) => {
+    const recorrente = form.repeticao === 'mensal';
+    const nParcelas = recorrente ? Math.max(1, parseInt(form.parcelas, 10) || 1) : 1;
+    const qtde = parseInt(form.qtdeMeses, 10);
+    // Parcelado: o nº de parcelas define o nº de meses e o valor é dividido.
+    const parcelado = nParcelas > 1;
+    const infinito = recorrente && !parcelado && (!form.qtdeMeses || isNaN(qtde) || qtde < 1);
+    const nMeses = !recorrente ? 1 : (parcelado ? nParcelas : (infinito ? HORIZONTE_INFINITO : qtde));
+    const valores = parcelado ? dividirParcelas(valor, nParcelas) : null;
+
+    const novos = [];
+    for (let i = 0; i < nMeses; i++) {
+      const mRef = addMonths(mesInicial, i);
+      novos.push({
+        id: recorrente ? `${grupoId}_${mRef}` : `${baseId}`,
+        tipo, descricao: form.descricao.trim(), valor: parcelado ? valores[i] : valor,
+        categoria, mesRef: mRef, diaVenc, status: 'pendente',
+        recorrente, recorrenteInfinito: infinito, lembrete: form.lembrete, cardId: null,
+        parcela: parcelado ? { atual: i + 1, total: nParcelas } : null,
+        grupoId: recorrente ? grupoId : null,
+      });
     }
     return novos;
   };
@@ -372,6 +403,30 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
         return;
       }
 
+      // Sem cartão: só reconstrói a série se algum campo ESTRUTURAL mudou
+      // (repetição, nº de parcelas, qtde de meses). Categoria, descrição e
+      // valor continuam sendo aplicados em vigor, sem remontar nada.
+      const grupo = entry.grupoId ? allEntries.filter(e => e.grupoId === entry.grupoId) : [entry];
+      const repeticaoOrig = entry.recorrente ? 'mensal' : 'unica';
+      const parcOrig = entry.parcela?.total || 1;
+      const qtdeOrig = (entry.recorrente && !entry.recorrenteInfinito && parcOrig <= 1) ? String(grupo.length) : '';
+      const estrutural =
+        form.repeticao !== repeticaoOrig ||
+        (parseInt(form.parcelas, 10) || 1) !== parcOrig ||
+        (form.qtdeMeses || '') !== qtdeOrig;
+
+      if (estrutural) {
+        const pagos = new Set(grupo.filter(o => o.status === 'pago').map(o => o.mesRef));
+        const mesInicial = grupo.map(e => e.mesRef).sort()[0] || entry.mesRef;
+        const novos = montarSerieSimples({
+          grupoId: `g_${Date.now()}`, baseId: Date.now(), valor, categoria, tipo, diaVenc, mesInicial,
+        }).map(n => pagos.has(n.mesRef) ? { ...n, status: 'pago' } : n);
+        const idsAntigos = new Set(grupo.map(o => o.id));
+        setEntries(prev => [...(Array.isArray(prev) ? prev : []).filter(e => !idsAntigos.has(e.id)), ...novos]);
+        closeEntryModal();
+        return;
+      }
+
       const changes = { descricao: form.descricao.trim(), valor, categoria, diaVenc, cardId: form.cardId || null, lembrete: form.lembrete };
       if (entry.grupoId && entry.recorrente) {
         setRecurringPrompt({ action: 'edit', entryId: editId, grupoId: entry.grupoId, changes, title: entry.descricao });
@@ -391,24 +446,7 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
     if (isCartao) {
       novos.push(...montarSerieCartao({ grupoId, baseId, valor, categoria }));
     } else {
-      const recorrente = form.repeticao === 'mensal';
-      const qtde = parseInt(form.qtdeMeses, 10);
-      const infinito = recorrente && (!form.qtdeMeses || isNaN(qtde) || qtde < 1);
-      const nMeses = !recorrente ? 1 : (infinito ? HORIZONTE_INFINITO : qtde);
-      const nParcelas = recorrente ? Math.max(1, parseInt(form.parcelas, 10) || 1) : 1;
-      const valores = nParcelas > 1 ? dividirParcelas(valor, nParcelas) : [valor];
-
-      for (let i = 0; i < nMeses; i++) {
-        const mRef = addMonths(mesRef, i);
-        const vParc = nParcelas > 1 ? valores[i % nParcelas] : valor;
-        novos.push({
-          id: recorrente ? `${grupoId}_${mRef}` : `${baseId}`, tipo, descricao: form.descricao.trim(), valor: vParc,
-          categoria, mesRef: mRef, diaVenc, status: 'pendente', recorrente, recorrenteInfinito: infinito,
-          lembrete: form.lembrete, cardId: null,
-          parcela: nParcelas > 1 ? { atual: (i % nParcelas) + 1, total: nParcelas } : null,
-          grupoId: recorrente ? grupoId : null,
-        });
-      }
+      novos.push(...montarSerieSimples({ grupoId, baseId, valor, categoria, tipo, diaVenc, mesInicial: mesRef }));
     }
 
     setEntries(prev => [...(Array.isArray(prev) ? prev : []), ...novos]);
@@ -931,7 +969,7 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
                   </div>
                   <div>
                     <label className="text-xs font-semibold text-slate-500 mb-1.5 block flex items-center gap-1"><RefreshCw className="w-3 h-3" />Repetição</label>
-                    <select value={form.repeticao} onChange={e => setForm(f => ({ ...f, repeticao: e.target.value }))} className={inputCls} disabled={!!editId}>
+                    <select value={form.repeticao} onChange={e => setForm(f => ({ ...f, repeticao: e.target.value }))} className={inputCls}>
                       <option value="unica">Única</option>
                       <option value="mensal">Mensal</option>
                     </select>
@@ -939,19 +977,21 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
                 </div>
               )}
 
-              {/* Qtde de meses + Parcelas (mensal, sem cartão) */}
+              {/* Parcelas / Qtde de meses (mensal, sem cartão) */}
               {form.repeticao === 'mensal' && !(form.tipo === 'despesa' && form.cardId) && (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Qtde de meses (vazio = ∞)</label>
-                    <input type="number" min="1" max="120" placeholder="Ex.: 12" value={form.qtdeMeses}
-                      onChange={e => setForm(f => ({ ...f, qtdeMeses: e.target.value }))} className={inputCls} />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-slate-500 mb-1.5 block flex items-center gap-1"><Layers className="w-3 h-3" />Parcelas (1 = integral)</label>
-                    <input type="number" min="1" max="120" placeholder="Ex.: 3" value={form.parcelas}
+                    <label className="text-xs font-semibold text-slate-500 mb-1.5 block flex items-center gap-1"><Layers className="w-3 h-3" />Parcelas (divide o valor)</label>
+                    <input type="number" min="1" max="120" placeholder="Ex.: 8" value={form.parcelas}
                       onChange={e => setForm(f => ({ ...f, parcelas: e.target.value }))} className={inputCls} />
                   </div>
+                  {(parseInt(form.parcelas, 10) || 1) <= 1 && (
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Qtde de meses (vazio = ∞)</label>
+                      <input type="number" min="1" max="120" placeholder="Ex.: 12" value={form.qtdeMeses}
+                        onChange={e => setForm(f => ({ ...f, qtdeMeses: e.target.value }))} className={inputCls} />
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -975,13 +1015,14 @@ export const FinancasTab = ({ cards = [], entries = [], categories = {}, setCard
               {form.repeticao === 'mensal' && !(form.tipo === 'despesa' && form.cardId) && parseCurrencyToNumber(form.valorInput) > 0 && (() => {
                 const nParcelas = Math.max(1, parseInt(form.parcelas, 10) || 1);
                 const vTotal = parseCurrencyToNumber(form.valorInput);
-                const valores = nParcelas > 1 ? dividirParcelas(vTotal, nParcelas) : [vTotal];
+                const mesInicial = editId ? (mesEntries.find(e => e.id === editId)?.mesRef || mesRef) : mesRef;
+                const ultimo = addMonths(mesInicial, nParcelas - 1);
                 const meses = form.qtdeMeses && parseInt(form.qtdeMeses, 10) >= 1 ? `por ${form.qtdeMeses} meses` : 'por tempo indeterminado (∞)';
                 return (
                   <p className="text-xs text-slate-500 bg-slate-100 dark:bg-slate-800 rounded-xl p-2.5">
                     {nParcelas > 1
-                      ? <>{nParcelas}× de aprox. <span className="font-bold text-indigo-500">{fmtBRL(valores[0])}</span> — {meses}, a partir de {cap(formatMonthLabel(mesRef))}.</>
-                      : <>{fmtBRL(vTotal)}/mês {meses}, a partir de {cap(formatMonthLabel(mesRef))}</>}
+                      ? <>{nParcelas}× de aprox. <span className="font-bold text-indigo-500">{fmtBRL(dividirParcelas(vTotal, nParcelas)[0])}</span> — de {cap(formatMonthLabel(mesInicial))} até <span className="font-bold">{cap(formatMonthLabel(ultimo))}</span>.</>
+                      : <>{fmtBRL(vTotal)}/mês {meses}, a partir de {cap(formatMonthLabel(mesInicial))}.</>}
                   </p>
                 );
               })()}
